@@ -1,0 +1,30 @@
+{
+  "name": "scribbly",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev --prefix ws-server\" \"npm run dev --prefix webapp/client\"",
+    "dev:server": "npm run dev --prefix ws-server",
+    "dev:client": "npm run dev --prefix webapp/client",
+    "build": "npm run build --prefix ws-server && npm run build --prefix webapp/client",
+    "lint": "npm run lint --prefix ws-server && npm run lint --prefix webapp/client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "description": "Clone of Skribbl.io",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/silky-x0/scribbly.git"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/silky-x0/scribbly/issues"
+  },
+  "homepage": "https://github.com/silky-x0/scribbly#readme"
+}
