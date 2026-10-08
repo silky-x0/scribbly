@@ -1,47 +1,47 @@
-import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-
-const PORT = Number(process.env.PORT ?? 3001);
-// Allow a comma-separated list in prod, single URL in dev.
-const CLIENT_URLS = (process.env.CLIENT_URL ?? 'http://localhost:3000')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+import { registerHandlers } from '@/classes/MessageHandler';
+import { roomManager } from '@/classes/RoomManager';
+import { env } from '@/config/env.config';
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+} from '@/types/socket-events';
+import type { SocketData } from '@/types/socket';
+import type { DefaultEventsMap } from 'socket.io';
 
 const app = express();
-app.use(cors({ origin: CLIENT_URLS }));
+app.use(cors({ origin: env.clientUrls }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, uptime: process.uptime() });
 });
 
-// Placeholder for Phase 1 public room browser.
 app.get('/api/rooms/public', (_req, res) => {
-  res.json({ rooms: [] });
+  res.json({ rooms: roomManager.listPublicRooms() });
 });
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: { origin: CLIENT_URLS },
+const io = new Server<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  DefaultEventsMap,
+  SocketData
+>(httpServer, {
+  cors: { origin: env.clientUrls },
   transports: ['websocket', 'polling'],
 });
 
 io.on('connection', (socket) => {
   console.log(`[ws] connected: ${socket.id}`);
-
-  // Phase 0 smoke signal — client logs "connected" on receipt.
   socket.emit('connected', { socketId: socket.id });
-
-  socket.on('disconnect', (reason) => {
-    console.log(`[ws] disconnected: ${socket.id} (${reason})`);
-  });
+  registerHandlers(io, socket);
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`[ws-server] listening on :${PORT}`);
-  console.log(`[ws-server] allowed origins: ${CLIENT_URLS.join(', ')}`);
+httpServer.listen(env.port, () => {
+  console.log(`[ws-server] listening on :${env.port}`);
+  console.log(`[ws-server] allowed origins: ${env.clientUrls.join(', ')}`);
 });
