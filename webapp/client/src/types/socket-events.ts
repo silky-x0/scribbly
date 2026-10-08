@@ -102,13 +102,21 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   create_room: (
     payload: { name: string; settings: Partial<RoomSettings> },
-    ack: (res: { roomId: string; player: Player }) => void,
+    ack: (
+      res:
+        | { ok: true; roomId: string; player: Player; settings: RoomSettings }
+        | { ok: false; error: string },
+    ) => void,
   ) => void;
   join_room: (
     payload: { roomId: string; name: string },
-    ack: (res: { ok: boolean; error?: string; player?: Player }) => void,
+    ack: (
+      res: { ok: true; player: Player } | { ok: false; error: string },
+    ) => void,
   ) => void;
-  start_game: (ack: (res: { ok: boolean; error?: string }) => void) => void;
+  start_game: (
+    ack: (res: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
   word_chosen: (payload: { word: string }) => void;
   draw_start: (payload: {
     x: number;
