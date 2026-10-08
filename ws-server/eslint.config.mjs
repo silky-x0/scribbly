@@ -33,6 +33,7 @@ export default [
         "error",
         { argsIgnorePattern: "^_" },
       ],
+      "@typescript-eslint/no-explicit-any": "error",
       "no-console": "off",
     },
   },
