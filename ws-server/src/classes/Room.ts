@@ -5,15 +5,16 @@ import type {
 } from '@/types/socket-events';
 import type { TypedServer } from '@/types/socket';
 import { normalizeRoomCode } from '@/utils/roomCode';
+import type { Game } from '@/classes/Game';
 import type { Player } from '@/classes/Player';
 
 export type AddPlayerResult =
   | { ok: true; player: Player }
   | { ok: false; error: string };
 
-/** Owns the player list, host, and settings of one room. */
 export class Room {
   players: Player[] = [];
+  game: Game | null = null;
 
   constructor(
     public readonly roomId: string,
@@ -36,7 +37,6 @@ export class Room {
     return this.players.find((p) => p.id === socketId);
   }
 
-  /** Flip a player's ready flag. Returns false for unknown players. */
   setReady(socketId: string, isReady: boolean): boolean {
     const player = this.getPlayer(socketId);
     if (player === undefined) {
@@ -62,10 +62,6 @@ export class Room {
     return { ok: true, player };
   }
 
-  /**
-   * Remove a player. If the host left, the longest-present remaining player
-   * becomes host. Returns the removed player (if any).
-   */
   removePlayer(socketId: string): Player | undefined {
     const idx = this.players.findIndex((p) => p.id === socketId);
     if (idx === -1) {

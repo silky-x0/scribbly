@@ -1,4 +1,5 @@
 import type { Room } from '@/classes/Room';
+import { Game } from '@/classes/Game';
 import { RoomManager, roomManager } from '@/classes/RoomManager';
 import type { TypedServer, TypedSocket } from '@/types/socket';
 import { clampSettings, validatePlayerName } from '@/utils/validate';
@@ -46,7 +47,10 @@ export function registerHandlers(
       ack({ ok: false, error: nameResult.error });
       return;
     }
-    leaveCurrentRoom(socket, manager);
+    const leftRoom = leaveCurrentRoom(socket, manager);
+    if (leftRoom !== undefined && leftRoom !== room) {
+      leftRoom.game?.onPlayerLeft(socket.id);
+    }
     const result = room.addPlayer(new Player(socket.id, nameResult.name));
     if (!result.ok) {
       ack({ ok: false, error: result.error });
@@ -56,6 +60,14 @@ export function registerHandlers(
     socket.data.roomId = room.roomId;
     ack({ ok: true, player: { ...result.player }, settings: room.settings });
     room.broadcast(io, 'player_joined', { players: room.toPlayersPayload() });
+    // Late joiners mid-game get a snapshot so their UI matches the phase.
+    if (
+      room.game !== null &&
+      room.game.phase !== 'LOBBY' &&
+      room.game.phase !== 'GAME_OVER'
+    ) {
+      socket.emit('game_state', room.game.snapshot());
+    }
   });
 
   socket.on('start_game', (ack) => {
@@ -80,8 +92,31 @@ export function registerHandlers(
       });
       return;
     }
-    // Phase 3 turns this into the real turn-based state machine.
+    if (room.game !== null && room.game.phase !== 'GAME_OVER') {
+      ack({ ok: false, error: 'Game already in progress.' });
+      return;
+    }
+    room.game = new Game(room.settings, {
+      getPlayers: () => room.players,
+      sendTo: (socketId, event, ...args) => {
+        io.to(socketId).emit(event, ...args);
+      },
+      broadcast: (event, ...args) => {
+        room.broadcast(io, event, ...args);
+      },
+      broadcastExcept: (exceptId, event, ...args) => {
+        io.to(room.roomId).except(exceptId).emit(event, ...args);
+      },
+    });
+    room.game.startGame();
     ack({ ok: true });
+  });
+
+  socket.on('word_chosen', (payload) => {
+    const room = currentRoom(socket, manager);
+    // No ack channel in the contract; invalid picks are ignored (only the
+    // drawer ever sees options, so these indicate a misbehaving client).
+    room?.game?.chooseWord(socket.id, payload.word);
   });
 
   socket.on('toggle_ready', (payload, ack) => {
@@ -101,6 +136,7 @@ export function registerHandlers(
       return;
     }
     ack({ ok: true });
+    room.game?.onPlayerLeft(socket.id);
     if (!room.isEmpty()) {
       room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
     }
@@ -108,7 +144,9 @@ export function registerHandlers(
 
   socket.on('disconnect', () => {
     const room = leaveCurrentRoom(socket, manager);
-    if (room !== undefined && !room.isEmpty()) {
+    if (room === undefined) return;
+    room.game?.onPlayerLeft(socket.id);
+    if (!room.isEmpty()) {
       room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
     }
   });
@@ -125,10 +163,6 @@ function currentRoom(
   return manager.getRoom(roomId);
 }
 
-/**
- * Remove the socket from its current room (if any). Deletes the room when it
- * becomes empty. Returns the room it left, if any.
- */
 function leaveCurrentRoom(
   socket: TypedSocket,
   manager: RoomManager,
