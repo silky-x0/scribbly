@@ -66,9 +66,12 @@ export default function RoomPage() {
     toastId.current += 1;
     const id = toastId.current;
     setToasts((current) => [...current.slice(-2), { id, text, kind }]);
-    setTimeout(() => {
-      setToasts((current) => current.filter((t) => t.id !== id));
-    }, 4000);
+    // Errors persist until replaced — 4s is too short to process a failure.
+    if (kind !== 'error') {
+      setTimeout(() => {
+        setToasts((current) => current.filter((t) => t.id !== id));
+      }, 4000);
+    }
   }, []);
 
   const doJoin = useCallback(
