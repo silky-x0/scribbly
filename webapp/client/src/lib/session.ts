@@ -40,7 +40,6 @@ function isRoomSettings(value: unknown): value is RoomSettings {
   );
 }
 
-/** Identity saved by the landing page. Null when the player never entered. */
 export function loadIdentity(): Identity | null {
   const name = readString(NAME_KEY);
   if (name === null) return null;

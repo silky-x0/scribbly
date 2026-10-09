@@ -140,7 +140,7 @@ h1 span { color: var(--primary); display: block; font-size: 2.6875rem; margin-to
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
 @media (max-width: 700px) { h1 { font-size: 2.5rem; line-height: 1.12; margin-top: 22px; } h1 span { font-size: 1.8125rem; line-height: 1.15; max-width: 320px; margin: 8px auto 0; }.pencil-sticker { width: 76px; height: 90px; left: -38px; top: 104px; }.art-badge { width: 58px; height: 58px; right: -32px; top: 108px; font-size: 9px; }.hero-description { font-size: 0.6875rem; }.mini-sticker svg { width: 35px; height: 35px; }.entry-layout { margin-top: 28px; } }
 
-/* ---- Lobby (Phase 2): calm frames, same tokens, no new palette ---- */
+/* Lobby */
 .lobby-wrap { max-width: 720px; margin: 0 auto; padding: 40px 24px 64px; }
 .lobby-card { background: var(--paper); border: 2px solid var(--foreground); border-radius: 8px; padding: 28px; box-shadow: var(--ink-shadow); }
 .lobby-note { font-size: 0.75rem; line-height: 1.8; color: var(--muted-foreground); margin: 8px 0 0; }

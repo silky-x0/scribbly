@@ -22,9 +22,7 @@ function friendlyJoinError(roomId: string, error: string): string {
   return error;
 }
 
-// Whether the tab holds a saved identity. Read as external-store state so
-// SSR (snapshot: false) and hydration never disagree, with no setState in
-// effects. Re-evaluated on every render, so saving an identity flips it.
+// External-store reads, so SSR and hydration agree without setState in effects.
 function getIdentitySnapshot(): boolean {
   if (typeof window === 'undefined') return false;
   return loadIdentity() === null;
@@ -105,9 +103,7 @@ export default function RoomPage() {
     [socket, roomId],
   );
 
-  // Join once per room. Roster, settings and self arrive via the join ack
-  // plus live broadcasts; nothing is seeded during render or effects, so
-  // SSR and hydration always agree (blank → live).
+  // Join once per room; ack + broadcasts fill state (no seeding, so SSR/hydration agree).
   useEffect(() => {
     if (roomId === '') return;
     const identity = loadIdentity();
@@ -121,7 +117,6 @@ export default function RoomPage() {
     };
   }, [roomId, socket, doJoin]);
 
-  // Live roster from every broadcast flavour.
   useEffect(() => {
     const onRoster = (payload: { players: Player[] }) => {
       setPlayers(payload.players);
@@ -152,7 +147,6 @@ export default function RoomPage() {
     const me = players?.find((p) => p.id === myId);
     socket.emit('toggle_ready', { isReady: !(me?.isReady ?? false) }, (res) => {
       if (!res.ok) pushToast(res.error, 'error');
-      // Roster refreshes via lobby_update.
     });
   }
 

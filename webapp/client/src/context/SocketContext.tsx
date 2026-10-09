@@ -34,9 +34,8 @@ function getStatusServerSnapshot(): boolean {
 }
 
 /**
- * Owns the tab-lifetime socket: connects on mount, tracks status, never
- * disconnects on unmount (StrictMode-safe; leaving rooms is explicit via
- * leave_room so navigation never strands players).
+ * Tab-lifetime connection: never disconnect on unmount (StrictMode-safe).
+ * Leaving rooms is explicit via leave_room, so navigation never strands players.
  */
 export function SocketProvider({ children }: { children: ReactNode }) {
   const connected = useSyncExternalStore(

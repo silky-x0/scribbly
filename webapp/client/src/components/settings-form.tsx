@@ -41,7 +41,6 @@ function clampField(
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
-/** Compact private-room settings. Server re-clamps everything regardless. */
 export function SettingsForm({
   initial,
   busy,

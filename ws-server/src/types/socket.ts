@@ -4,7 +4,6 @@ import type {
   ServerToClientEvents,
 } from '@/types/socket-events';
 
-/** Per-socket session data: which room this socket has joined (if any). */
 export interface SocketData {
   roomId?: string;
 }

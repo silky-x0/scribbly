@@ -5,7 +5,6 @@ import { Room } from '@/classes/Room';
 
 export const MAX_CODE_ATTEMPTS = 10;
 
-/** Singleton registry of all live rooms. */
 export class RoomManager {
   private rooms = new Map<string, Room>();
 

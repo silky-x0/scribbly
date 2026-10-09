@@ -6,7 +6,6 @@ export interface Toast {
   kind: 'error' | 'info' | 'success';
 }
 
-/** Bottom-center stack. Errors use role=alert, notes use role=status. */
 export function Toaster({ toasts }: { toasts: Toast[] }) {
   if (toasts.length === 0) return null;
   return (

@@ -1,9 +1,3 @@
-// Shared Socket.IO contract — single source of truth.
-// Mirror (copy) this file into:
-//   - ws-server/src/types/socket-events.ts
-//   - webapp/client/src/types/socket-events.ts
-// Keep the three in sync until a shared-package setup (npm workspaces / tsconfig paths) is added.
-
 export type Tool = 'brush' | 'eraser';
 
 export interface Point {
