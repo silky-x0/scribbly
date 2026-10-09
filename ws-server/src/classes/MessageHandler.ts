@@ -69,6 +69,33 @@ export function registerHandlers(
       });
       return;
     }
+    const away = room.findAwayByName(nameResult.name);
+    if (away !== undefined) {
+      cancelRemoval(away.id);
+      const oldId = away.id;
+      away.id = socket.id;
+      away.isConnected = true;
+      room.game?.remapPlayer(oldId, socket.id);
+      socket.join(room.roomId);
+      socket.data.roomId = room.roomId;
+      ack({
+        ok: true,
+        player: { ...away },
+        settings: room.settings,
+        players: room.toPlayersPayload(),
+      });
+      room.broadcast(io, 'player_joined', { players: room.toPlayersPayload() });
+      announce(io, room, `${away.name} reconnected.`);
+      if (
+        room.game !== null &&
+        room.game.phase !== 'LOBBY' &&
+        room.game.phase !== 'GAME_OVER'
+      ) {
+        socket.emit('game_state', room.game.snapshot());
+        socket.emit('hint_update', { hints: room.game.getHints() });
+      }
+      return;
+    }
     const leftRoom = leaveCurrentRoom(socket, manager);
     if (leftRoom !== undefined && leftRoom !== room) {
       leftRoom.game?.onPlayerLeft(socket.id);
@@ -114,7 +141,7 @@ export function registerHandlers(
       ack({ ok: false, error: 'Only the host can start the game.' });
       return;
     }
-    if (room.players.length < MIN_PLAYERS_TO_START) {
+    if (room.players.filter((p) => p.isConnected).length < MIN_PLAYERS_TO_START) {
       ack({
         ok: false,
         error: `Need at least ${MIN_PLAYERS_TO_START} players to start.`,
@@ -242,16 +269,57 @@ export function registerHandlers(
     handleChat(io, socket, manager, payload.text);
   });
 
-  socket.on('toggle_ready', (payload, ack) => {    const room = currentRoom(socket, manager);
-    if (room === undefined || !room.setReady(socket.id, payload.isReady)) {
+  socket.on('toggle_ready', (payload, ack) => {
+    const room = currentRoom(socket, manager);
+    if (room === undefined || room.getPlayer(socket.id) === undefined) {
       ack({ ok: false, error: 'You are not in a room.' });
       return;
     }
+    if (
+      room.game !== null &&
+      room.game.phase !== 'LOBBY' &&
+      room.game.phase !== 'GAME_OVER'
+    ) {
+      ack({ ok: false, error: 'Too late — the game already started.' });
+      return;
+    }
+    room.setReady(socket.id, payload.isReady);
     ack({ ok: true });
     room.broadcast(io, 'lobby_update', { players: room.toPlayersPayload() });
   });
 
+  socket.on('play_again', (ack) => {
+    const room = currentRoom(socket, manager);
+    const player = room?.getPlayer(socket.id);
+    if (room === undefined || player === undefined) {
+      ack({ ok: false, error: 'You are not in a room.' });
+      return;
+    }
+    if (!player.isHost) {
+      ack({ ok: false, error: 'Only the host can start a new game.' });
+      return;
+    }
+    if (room.game === null || room.game.phase !== 'GAME_OVER') {
+      ack({ ok: false, error: 'Finish the current game first.' });
+      return;
+    }
+    for (const p of room.players) {
+      p.score = 0;
+      p.isReady = false;
+      p.hasGuessed = false;
+    }
+    room.game = null;
+    ack({ ok: true });
+    room.broadcast(io, 'game_state', {
+      phase: 'LOBBY' as const,
+      players: room.toPlayersPayload(),
+      strokes: [],
+      timeLeft: 0,
+    });
+  });
+
   socket.on('leave_room', (ack) => {
+    lastChatAt.delete(socket.id);
     const leaver = manager.findRoomByPlayer(socket.id)?.getPlayer(socket.id);
     const room = leaveCurrentRoom(socket, manager);
     if (room === undefined) {
@@ -269,17 +337,17 @@ export function registerHandlers(
   });
 
   socket.on('disconnect', () => {
-    const leaver = manager.findRoomByPlayer(socket.id)?.getPlayer(socket.id);
-    const room = leaveCurrentRoom(socket, manager);
-    if (room === undefined) return;
+    const room = currentRoom(socket, manager);
+    socket.data.roomId = undefined;
     lastChatAt.delete(socket.id);
+    if (room === undefined) return;
+    const player = room.getPlayer(socket.id);
+    if (player === undefined) return;
+    player.isConnected = false;
     room.game?.onPlayerLeft(socket.id);
-    if (!room.isEmpty()) {
-      room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
-      if (leaver !== undefined) {
-        announce(io, room, `${leaver.name} left the room.`);
-      }
-    }
+    room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
+    announce(io, room, `${player.name} disconnected.`);
+    scheduleRemoval(io, manager, room.roomId, socket.id);
   });
 }
 
@@ -398,8 +466,42 @@ function handleChat(
   });
 }
 
-function leaveCurrentRoom(
-  socket: TypedSocket,
+const RECONNECT_GRACE_MS = 45000;
+const pendingRemovals = new Map<string, ReturnType<typeof setTimeout>>();
+
+function cancelRemoval(socketId: string): void {
+  const timer = pendingRemovals.get(socketId);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    pendingRemovals.delete(socketId);
+  }
+}
+
+function scheduleRemoval(
+  io: TypedServer,
+  manager: RoomManager,
+  roomId: string,
+  socketId: string,
+): void {
+  cancelRemoval(socketId);
+  const timer = setTimeout(() => {
+    pendingRemovals.delete(socketId);
+    const room = manager.getRoom(roomId);
+    if (room === undefined) return;
+    const gone = room.getPlayer(socketId)?.name;
+    room.removePlayer(socketId);
+    if (room.isEmpty()) {
+      manager.deleteRoom(roomId);
+      return;
+    }
+    room.game?.onPlayerLeft(socketId);
+    room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
+    if (gone !== undefined) announce(io, room, `${gone} left the room.`);
+  }, RECONNECT_GRACE_MS);
+  pendingRemovals.set(socketId, timer);
+}
+
+function leaveCurrentRoom(  socket: TypedSocket,
   manager: RoomManager,
 ): Room | undefined {
   const room =

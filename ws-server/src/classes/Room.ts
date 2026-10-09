@@ -51,6 +51,13 @@ export class Room {
     return this.players.some((p) => normalizeRoomCode(p.name) === needle);
   }
 
+  findAwayByName(name: string): Player | undefined {
+    const needle = normalizeRoomCode(name);
+    return this.players.find(
+      (p) => !p.isConnected && normalizeRoomCode(p.name) === needle,
+    );
+  }
+
   addPlayer(player: Player): AddPlayerResult {
     if (this.isFull()) {
       return { ok: false, error: 'Room is full.' };

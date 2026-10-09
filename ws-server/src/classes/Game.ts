@@ -57,6 +57,8 @@ export class Game {
   guessedPlayerIds = new Set<string>();
   hintsRevealed: string[] = [];
   private usedWords = new Set<string>();
+  private topScore = 0;
+  private topScorerId: string | null = null;
   private wordTimer: ReturnType<typeof setTimeout> | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private pauseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,6 +75,8 @@ export class Game {
       p.isReady = false;
       p.hasGuessed = false;
     }
+    this.topScore = 0;
+    this.topScorerId = null;
     this.turnOrder = this.hooks.getPlayers().map((p) => p.id);
     this.currentRound = 1;
     this.currentDrawerIdx = 0;
@@ -100,9 +104,19 @@ export class Game {
     return { ok: true };
   }
 
+  remapPlayer(oldSocketId: string, newSocketId: string): void {
+    this.turnOrder = this.turnOrder.map((id) =>
+      id === oldSocketId ? newSocketId : id,
+    );
+    if (this.guessedPlayerIds.delete(oldSocketId)) {
+      this.guessedPlayerIds.add(newSocketId);
+    }
+    if (this.topScorerId === oldSocketId) this.topScorerId = newSocketId;
+  }
+
   onPlayerLeft(socketId: string): void {
     if (this.phase === 'LOBBY' || this.phase === 'GAME_OVER') return;
-    if (this.hooks.getPlayers().length < 2) {
+    if (this.connectedCount() < 2) {
       this.finishGame();
       return;
     }
@@ -155,6 +169,10 @@ export class Game {
     this.guessedPlayerIds.add(socketId);
     player.score += points;
     player.hasGuessed = true;
+    if (player.score > this.topScore) {
+      this.topScore = player.score;
+      this.topScorerId = player.id;
+    }
     const drawer = this.hooks
       .getPlayers()
       .find((p) => p.id === this.turnOrder[this.currentDrawerIdx]);
@@ -178,13 +196,14 @@ export class Game {
 
   private startTurn(skips = 0): void {
     this.clearTimers();
-    const players = this.hooks.getPlayers();
+    const players = this.hooks.getPlayers().filter((p) => p.isConnected);
     if (players.length < 2 || skips >= this.turnOrder.length) {
       this.finishGame();
       return;
     }
     const drawerId = this.turnOrder[this.currentDrawerIdx];
-    if (drawerId === undefined || players.every((p) => p.id !== drawerId)) {
+    const drawer = players.find((p) => p.id === drawerId);
+    if (drawerId === undefined || drawer === undefined) {
       // Slot belongs to someone who left: consume the slot, keep round shape.
       this.currentDrawerIdx =
         (this.currentDrawerIdx + 1) % this.turnOrder.length;
@@ -312,8 +331,16 @@ export class Game {
     const leaderboard = [...this.hooks.getPlayers()]
       .map((p) => ({ ...p }))
       .sort((a, b) => b.score - a.score);
-    const winner = leaderboard[0] ?? null;
+    const topScorer =
+      this.topScorerId === null
+        ? undefined
+        : leaderboard.find((p) => p.id === this.topScorerId);
+    const winner = topScorer ?? leaderboard[0] ?? null;
     this.hooks.broadcast('game_over', { winner, leaderboard });
+  }
+
+  private connectedCount(): number {
+    return this.hooks.getPlayers().filter((p) => p.isConnected).length;
   }
 
   private clearTimers(): void {
