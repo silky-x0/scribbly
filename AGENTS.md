@@ -40,6 +40,9 @@ Real-time multiplayer drawing/guessing game. Next.js UI + standalone Socket.IO s
 - `strict` TypeScript must pass (`tsc --noEmit`) and `eslint` must be clean.
 - Prefer discriminated unions / `Result`-style returns over throwing for
   validation (names, settings, payloads).
+- Do not add unnecessary comments. Code should be self-explanatory through
+  good names and types; comment only the non-obvious (why, not what) —
+  no play-by-play, no restating the code, no obvious docblocks.
 - Keep `index.ts` thin: socket handlers go in `MessageHandler`, game rules in
   `services/`, state in `classes/`.
 - Don't add deps without need; don't scaffold future phases' code.
