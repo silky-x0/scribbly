@@ -52,6 +52,7 @@ export interface ServerToClientEvents {
   // Phases 1+ (declared now so client/server stay in sync):
   player_joined: (payload: { players: Player[] }) => void;
   player_left: (payload: { players: Player[] }) => void;
+  lobby_update: (payload: { players: Player[] }) => void;
   round_start: (payload: {
     drawerId: string;
     wordOptions: string[] | null; // null for non-drawers
@@ -111,10 +112,19 @@ export interface ClientToServerEvents {
   join_room: (
     payload: { roomId: string; name: string },
     ack: (
-      res: { ok: true; player: Player } | { ok: false; error: string },
+      res:
+        | { ok: true; player: Player; settings: RoomSettings }
+        | { ok: false; error: string },
     ) => void,
   ) => void;
   start_game: (
+    ack: (res: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
+  toggle_ready: (
+    payload: { isReady: boolean },
+    ack: (res: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
+  leave_room: (
     ack: (res: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
   word_chosen: (payload: { word: string }) => void;
