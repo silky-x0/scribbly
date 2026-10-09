@@ -4,7 +4,10 @@ Real-time multiplayer drawing and guessing game inspired by skribbl.io, with an
 original "sticker notebook" identity. Create a room, share the link, take turns
 drawing while everyone guesses in real time.
 
-Live URL: not deployed yet (see Deployment below).
+Live URLs: frontend https://scribbly-pink.vercel.app/ · backend
+https://scribbly-qbml.onrender.com (see Deployment below).
+
+![Doodle Club landing page](webapp/client/public/landing.png)
 
 ## Features
 
@@ -70,9 +73,10 @@ scribbly/
 ├── design.md           # visual direction (Sticker Mischief)
 ```
 
-## Deployment (planned)
+## Deployment
 
-- Frontend → Vercel, backend → Render/Railway (always-on for WebSockets).
+- Frontend → Vercel (https://scribbly-pink.vercel.app/), backend →
+  Render (https://scribbly-qbml.onrender.com, always-on for WebSockets).
 - Set `NEXT_PUBLIC_SERVER_URL` on Vercel and `CLIENT_URL` on the backend;
   both use `https`/`wss` in production.
 - The realtime server stays separate because serverless functions can't hold
