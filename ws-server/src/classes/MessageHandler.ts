@@ -3,6 +3,7 @@ import type { Room } from '@/classes/Room';
 import { Game } from '@/classes/Game';
 import { RoomManager, roomManager } from '@/classes/RoomManager';
 import type { Stroke } from '@/types/socket-events';
+import { SYSTEM_SENDER_ID } from '@/types/socket-events';
 import type { TypedServer, TypedSocket } from '@/types/socket';
 import {
   clampSettings,
@@ -86,6 +87,7 @@ export function registerHandlers(
       players: room.toPlayersPayload(),
     });
     room.broadcast(io, 'player_joined', { players: room.toPlayersPayload() });
+    announce(io, room, `${result.player.name} joined the room.`);
     // Late joiners mid-game get a snapshot so their UI matches the phase.
     if (
       room.game !== null &&
@@ -93,6 +95,7 @@ export function registerHandlers(
       room.game.phase !== 'GAME_OVER'
     ) {
       socket.emit('game_state', room.game.snapshot());
+      socket.emit('hint_update', { hints: room.game.getHints() });
     }
   });
 
@@ -231,8 +234,15 @@ export function registerHandlers(
     room.broadcast(io, 'canvas_clear');
   });
 
-  socket.on('toggle_ready', (payload, ack) => {
-    const room = currentRoom(socket, manager);
+  socket.on('chat', (payload) => {
+    handleChat(io, socket, manager, payload.text);
+  });
+
+  socket.on('guess', (payload) => {
+    handleChat(io, socket, manager, payload.text);
+  });
+
+  socket.on('toggle_ready', (payload, ack) => {    const room = currentRoom(socket, manager);
     if (room === undefined || !room.setReady(socket.id, payload.isReady)) {
       ack({ ok: false, error: 'You are not in a room.' });
       return;
@@ -242,6 +252,7 @@ export function registerHandlers(
   });
 
   socket.on('leave_room', (ack) => {
+    const leaver = manager.findRoomByPlayer(socket.id)?.getPlayer(socket.id);
     const room = leaveCurrentRoom(socket, manager);
     if (room === undefined) {
       ack({ ok: false, error: 'You are not in a room.' });
@@ -251,15 +262,23 @@ export function registerHandlers(
     room.game?.onPlayerLeft(socket.id);
     if (!room.isEmpty()) {
       room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
+      if (leaver !== undefined) {
+        announce(io, room, `${leaver.name} left the room.`);
+      }
     }
   });
 
   socket.on('disconnect', () => {
+    const leaver = manager.findRoomByPlayer(socket.id)?.getPlayer(socket.id);
     const room = leaveCurrentRoom(socket, manager);
     if (room === undefined) return;
+    lastChatAt.delete(socket.id);
     room.game?.onPlayerLeft(socket.id);
     if (!room.isEmpty()) {
       room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
+      if (leaver !== undefined) {
+        announce(io, room, `${leaver.name} left the room.`);
+      }
     }
   });
 }
@@ -286,6 +305,97 @@ function drawingGame(
   }
   if (!game.isDrawer(socket.id)) return undefined;
   return { room, game };
+}
+
+const MAX_CHAT_LENGTH = 100;
+const CHAT_INTERVAL_MS = 300;
+const lastChatAt = new Map<string, number>();
+
+function announce(io: TypedServer, room: Room, text: string): void {
+  room.broadcast(io, 'chat_message', {
+    playerId: SYSTEM_SENDER_ID,
+    playerName: 'System',
+    text,
+  });
+}
+
+function sanitizeChat(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return raw.trim().slice(0, MAX_CHAT_LENGTH);
+}
+
+function handleChat(
+  io: TypedServer,
+  socket: TypedSocket,
+  manager: RoomManager,
+  rawText: unknown,
+): void {
+  const room = currentRoom(socket, manager);
+  const player = room?.getPlayer(socket.id);
+  if (room === undefined || player === undefined) return;
+  const now = Date.now();
+  if (now - (lastChatAt.get(socket.id) ?? 0) < CHAT_INTERVAL_MS) return;
+  lastChatAt.set(socket.id, now);
+  const text = sanitizeChat(rawText);
+  if (text === '') return;
+  const game = room.game;
+  const guessing =
+    game !== null &&
+    game !== undefined &&
+    game.phase === 'DRAWING' &&
+    !game.isDrawer(socket.id) &&
+    !player.hasGuessed;
+  if (guessing && game !== null && game !== undefined) {
+    const outcome = game.guess(socket.id, text);
+    if (outcome.kind === 'ignored') return;
+    if (outcome.kind === 'correct') {
+      room.broadcast(io, 'guess_result', {
+        correct: true,
+        playerId: player.id,
+        playerName: player.name,
+        points: outcome.points,
+      });
+      room.broadcast(io, 'lobby_update', { players: room.toPlayersPayload() });
+      if (game.allGuessed()) game.endTurn();
+      return;
+    }
+    room.broadcast(io, 'chat_message', {
+      playerId: player.id,
+      playerName: player.name,
+      text,
+    });
+    if (outcome.kind === 'close') {
+      socket.emit('guess_result', {
+        correct: false,
+        playerId: player.id,
+        playerName: player.name,
+      });
+    }
+    return;
+  }
+  if (
+    game !== null &&
+    game !== undefined &&
+    game.phase === 'DRAWING' &&
+    (game.isDrawer(socket.id) || player.hasGuessed)
+  ) {
+    const drawerId = game.turnOrder[game.currentDrawerIdx];
+    for (const member of room.players) {
+      if (member.id === drawerId || member.hasGuessed) {
+        io.to(member.id).emit('chat_message', {
+          playerId: player.id,
+          playerName: player.name,
+          text,
+        });
+      }
+    }
+    return;
+  }
+  room.broadcast(io, 'chat_message', {
+    playerId: player.id,
+    playerName: player.name,
+    text,
+  });
 }
 
 function leaveCurrentRoom(

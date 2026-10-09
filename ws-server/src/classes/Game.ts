@@ -5,8 +5,15 @@ import type {
   ServerToClientEvents,
   Stroke,
 } from '../types/socket-events';
+import { SYSTEM_SENDER_ID } from '../types/socket-events';
 import type { Player } from './Player';
+import { maskWord, revealRandomLetter } from '../services/HintService';
+import {
+  DRAWER_POINTS_PER_GUESS,
+  guesserPoints,
+} from '../services/ScoreService';
 import { drawWordOptions } from '../services/WordService';
+import { levenshtein, normalizeText } from '../utils/text';
 
 export const WORD_SELECTION_SECONDS = 15;
 export const ROUND_END_PAUSE_MS = 5000;
@@ -31,6 +38,12 @@ export interface GameHooks {
 
 export type WordChoice = { ok: true } | { ok: false; error: string };
 
+export type GuessOutcome =
+  | { kind: 'ignored' }
+  | { kind: 'wrong' }
+  | { kind: 'close' }
+  | { kind: 'correct'; points: number };
+
 export class Game {
   phase: GamePhase = 'LOBBY';
   currentRound = 0;
@@ -47,6 +60,7 @@ export class Game {
   private wordTimer: ReturnType<typeof setTimeout> | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private pauseTimer: ReturnType<typeof setTimeout> | null = null;
+  private hintTimers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(
     private readonly settings: RoomSettings,
@@ -72,7 +86,8 @@ export class Game {
     );
   }
 
-  chooseWord(socketId: string, word: string): WordChoice {    if (this.phase !== 'WORD_SELECTION') {
+  chooseWord(socketId: string, word: string): WordChoice {
+    if (this.phase !== 'WORD_SELECTION') {
       return { ok: false, error: 'Not choosing a word right now.' };
     }
     if (socketId !== this.turnOrder[this.currentDrawerIdx]) {
@@ -91,12 +106,60 @@ export class Game {
       this.finishGame();
       return;
     }
+    if (this.phase === 'DRAWING' && this.allGuessed()) {
+      this.endTurn();
+      return;
+    }
     if (
       socketId === this.turnOrder[this.currentDrawerIdx] &&
       (this.phase === 'WORD_SELECTION' || this.phase === 'DRAWING')
     ) {
       this.endTurn();
     }
+  }
+
+  getHints(): string[] {
+    return [...this.hintsRevealed];
+  }
+
+  allGuessed(): boolean {
+    const drawerId = this.turnOrder[this.currentDrawerIdx];
+    return this.hooks
+      .getPlayers()
+      .every((p) => p.id === drawerId || this.guessedPlayerIds.has(p.id));
+  }
+
+  guess(socketId: string, rawText: string): GuessOutcome {
+    if (this.phase !== 'DRAWING' || this.currentWord === null) {
+      return { kind: 'ignored' };
+    }
+    if (socketId === this.turnOrder[this.currentDrawerIdx]) {
+      return { kind: 'ignored' };
+    }
+    if (this.guessedPlayerIds.has(socketId)) return { kind: 'ignored' };
+    const guess = normalizeText(rawText);
+    if (guess === '') return { kind: 'ignored' };
+    const word = normalizeText(this.currentWord);
+    if (guess !== word) {
+      return word.length > 4 && levenshtein(guess, word) <= 1
+        ? { kind: 'close' }
+        : { kind: 'wrong' };
+    }
+    const player = this.hooks.getPlayers().find((p) => p.id === socketId);
+    if (player === undefined) return { kind: 'ignored' };
+    const points = guesserPoints(
+      this.timeLeft,
+      this.settings.drawTime,
+      this.guessedPlayerIds.size + 1,
+    );
+    this.guessedPlayerIds.add(socketId);
+    player.score += points;
+    player.hasGuessed = true;
+    const drawer = this.hooks
+      .getPlayers()
+      .find((p) => p.id === this.turnOrder[this.currentDrawerIdx]);
+    if (drawer !== undefined) drawer.score += DRAWER_POINTS_PER_GUESS;
+    return { kind: 'correct', points };
   }
 
   snapshot(): {
@@ -128,7 +191,12 @@ export class Game {
       this.startTurn(skips + 1);
       return;
     }
-    this.wordOptions = drawWordOptions(this.settings.wordCount, this.usedWords);
+    this.wordOptions = drawWordOptions(
+      this.settings.wordCount,
+      this.usedWords,
+      undefined,
+      this.settings.wordMode === 'Combination',
+    );
     for (const w of this.wordOptions) this.usedWords.add(w);
     this.currentWord = null;
     this.timeLeft = this.settings.drawTime;
@@ -143,6 +211,13 @@ export class Game {
       drawerId,
       wordOptions: null,
       drawTime,
+    });
+    const drawerName =
+      players.find((p) => p.id === drawerId)?.name ?? 'Someone';
+    this.hooks.broadcast('chat_message', {
+      playerId: SYSTEM_SENDER_ID,
+      playerName: 'System',
+      text: `${drawerName} is drawing now.`,
     });
     this.wordTimer = setTimeout(() => {
       this.wordTimer = null;
@@ -162,11 +237,26 @@ export class Game {
     this.wordOptions = [];
     this.strokes = [];
     this.guessedPlayerIds = new Set<string>();
-    this.hintsRevealed = [];
+    this.hintsRevealed = maskWord(word);
     for (const p of this.hooks.getPlayers()) p.hasGuessed = false;
     this.timeLeft = this.settings.drawTime;
     this.phase = 'DRAWING';
     this.hooks.broadcast('game_state', this.snapshot());
+    this.hooks.broadcast('hint_update', { hints: [...this.hintsRevealed] });
+    if (this.settings.wordMode === 'Normal' && this.settings.hints > 0) {
+      for (let i = 1; i <= this.settings.hints; i += 1) {
+        const atMs =
+          (this.settings.drawTime * i * 1000) / (this.settings.hints + 1);
+        const timer = setTimeout(() => {
+          if (this.phase !== 'DRAWING') return;
+          const next = revealRandomLetter(this.hintsRevealed, word);
+          if (next === null) return;
+          this.hintsRevealed = next;
+          this.hooks.broadcast('hint_update', { hints: [...next] });
+        }, atMs);
+        this.hintTimers.push(timer);
+      }
+    }
     this.tickTimer = setInterval(() => {
       this.timeLeft -= 1;
       if (this.timeLeft <= 0) {
@@ -179,7 +269,7 @@ export class Game {
     }, 1000);
   }
 
-  private endTurn(): void {
+  endTurn(): void {
     if (this.phase !== 'WORD_SELECTION' && this.phase !== 'DRAWING') return;
     this.clearTimers();
     this.activeStroke = null;
@@ -191,6 +281,11 @@ export class Game {
       null;
     this.phase = 'ROUND_END';
     this.hooks.broadcast('round_end', { word, scores, nextDrawerId });
+    this.hooks.broadcast('chat_message', {
+      playerId: SYSTEM_SENDER_ID,
+      playerName: 'System',
+      text: `The word was "${word}".`,
+    });
     this.pauseTimer = setTimeout(() => {
       this.pauseTimer = null;
       this.advance();
@@ -234,5 +329,7 @@ export class Game {
       clearTimeout(this.pauseTimer);
       this.pauseTimer = null;
     }
+    for (const timer of this.hintTimers) clearTimeout(timer);
+    this.hintTimers = [];
   }
 }
