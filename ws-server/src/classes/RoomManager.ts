@@ -44,10 +44,12 @@ export class RoomManager {
     const out: PublicRoomInfo[] = [];
     for (const room of this.rooms.values()) {
       if (!room.settings.isPrivate) {
+        const game = room.game;
         out.push({
           roomId: room.roomId,
           playerCount: room.players.length,
           maxPlayers: room.settings.maxPlayers,
+          inGame: game !== null && game.phase !== 'LOBBY' && game.phase !== 'GAME_OVER',
         });
       }
     }

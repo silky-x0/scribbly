@@ -51,6 +51,10 @@ export function registerHandlers(
       ack({ ok: false, error: 'Room not found.' });
       return;
     }
+    if (room.isBanned(socket.id, addressOf(socket.handshake))) {
+      ack({ ok: false, error: 'You are banned from this room.' });
+      return;
+    }
     const nameResult = validatePlayerName(payload.name);
     if (!nameResult.ok) {
       ack({ ok: false, error: nameResult.error });
@@ -86,11 +90,7 @@ export function registerHandlers(
       });
       room.broadcast(io, 'player_joined', { players: room.toPlayersPayload() });
       announce(io, room, `${away.name} reconnected.`);
-      if (
-        room.game !== null &&
-        room.game.phase !== 'LOBBY' &&
-        room.game.phase !== 'GAME_OVER'
-      ) {
+      if (room.game !== null && room.game.phase !== 'LOBBY' && room.game.phase !== 'GAME_OVER') {
         socket.emit('game_state', room.game.snapshot());
         socket.emit('hint_update', { hints: room.game.getHints() });
       }
@@ -116,11 +116,7 @@ export function registerHandlers(
     room.broadcast(io, 'player_joined', { players: room.toPlayersPayload() });
     announce(io, room, `${result.player.name} joined the room.`);
     // Late joiners mid-game get a snapshot so their UI matches the phase.
-    if (
-      room.game !== null &&
-      room.game.phase !== 'LOBBY' &&
-      room.game.phase !== 'GAME_OVER'
-    ) {
+    if (room.game !== null && room.game.phase !== 'LOBBY' && room.game.phase !== 'GAME_OVER') {
       socket.emit('game_state', room.game.snapshot());
       socket.emit('hint_update', { hints: room.game.getHints() });
     }
@@ -161,7 +157,9 @@ export function registerHandlers(
         room.broadcast(io, event, ...args);
       },
       broadcastExcept: (exceptId, event, ...args) => {
-        io.to(room.roomId).except(exceptId).emit(event, ...args);
+        io.to(room.roomId)
+          .except(exceptId)
+          .emit(event, ...args);
       },
     });
     room.game.startGame();
@@ -269,17 +267,98 @@ export function registerHandlers(
     handleChat(io, socket, manager, payload.text);
   });
 
+  socket.on('kick_player', (payload, ack) => {
+    const room = currentRoom(socket, manager);
+    const host = room?.getPlayer(socket.id);
+    const target = room?.getPlayer(payload.playerId);
+    if (room === undefined || host === undefined || target === undefined) {
+      ack({ ok: false, error: 'You are not in a room.' });
+      return;
+    }
+    if (!host.isHost) {
+      ack({ ok: false, error: 'Only the host can kick players.' });
+      return;
+    }
+    if (target.id === socket.id) {
+      ack({ ok: false, error: 'You cannot kick yourself.' });
+      return;
+    }
+    ack({ ok: true });
+    ejectPlayer(io, room, manager, target.id, `${target.name} was removed by the host.`);
+  });
+
+  socket.on('ban_player', (payload, ack) => {
+    const room = currentRoom(socket, manager);
+    const host = room?.getPlayer(socket.id);
+    const target = room?.getPlayer(payload.playerId);
+    if (room === undefined || host === undefined || target === undefined) {
+      ack({ ok: false, error: 'You are not in a room.' });
+      return;
+    }
+    if (!host.isHost) {
+      ack({ ok: false, error: 'Only the host can ban players.' });
+      return;
+    }
+    if (target.id === socket.id) {
+      ack({ ok: false, error: 'You cannot ban yourself.' });
+      return;
+    }
+    room.bannedIds.add(target.id);
+    const targetSocket = io.sockets.sockets.get(target.id);
+    if (targetSocket !== undefined) {
+      room.bannedIps.add(addressOf(targetSocket.handshake));
+    }
+    ack({ ok: true });
+    ejectPlayer(io, room, manager, target.id, `${target.name} was banned by the host.`);
+  });
+
+  socket.on('votekick', (payload, ack) => {
+    const room = currentRoom(socket, manager);
+    const voter = room?.getPlayer(socket.id);
+    const target = room?.getPlayer(payload.playerId);
+    if (room === undefined || voter === undefined || target === undefined) {
+      ack({ ok: false, error: 'You are not in a room.' });
+      return;
+    }
+    if (target.id === socket.id) {
+      ack({ ok: false, error: 'You cannot votekick yourself.' });
+      return;
+    }
+    if (!target.isConnected) {
+      ack({ ok: false, error: 'They already left.' });
+      return;
+    }
+    let voters = room.votekicks.get(target.id);
+    if (voters === undefined) {
+      voters = new Set<string>();
+      room.votekicks.set(target.id, voters);
+    }
+    if (voters.has(socket.id)) {
+      ack({ ok: false, error: 'You already voted to kick them.' });
+      return;
+    }
+    voters.add(socket.id);
+    const eligible = room.players.filter((p) => p.isConnected && p.id !== target.id).length;
+    const needed = Math.floor(eligible / 2) + 1;
+    ack({ ok: true });
+    room.broadcast(io, 'votekick_update', {
+      targetId: target.id,
+      votes: voters.size,
+      needed,
+    });
+    if (voters.size >= needed) {
+      room.votekicks.delete(target.id);
+      ejectPlayer(io, room, manager, target.id, `${target.name} was voted out.`);
+    }
+  });
+
   socket.on('toggle_ready', (payload, ack) => {
     const room = currentRoom(socket, manager);
     if (room === undefined || room.getPlayer(socket.id) === undefined) {
       ack({ ok: false, error: 'You are not in a room.' });
       return;
     }
-    if (
-      room.game !== null &&
-      room.game.phase !== 'LOBBY' &&
-      room.game.phase !== 'GAME_OVER'
-    ) {
+    if (room.game !== null && room.game.phase !== 'LOBBY' && room.game.phase !== 'GAME_OVER') {
       ack({ ok: false, error: 'Too late — the game already started.' });
       return;
     }
@@ -351,10 +430,7 @@ export function registerHandlers(
   });
 }
 
-function currentRoom(
-  socket: TypedSocket,
-  manager: RoomManager,
-): Room | undefined {
+function currentRoom(socket: TypedSocket, manager: RoomManager): Room | undefined {
   const roomId = socket.data.roomId;
   if (roomId === undefined) {
     return manager.findRoomByPlayer(socket.id);
@@ -469,6 +545,39 @@ function handleChat(
 const RECONNECT_GRACE_MS = 45000;
 const pendingRemovals = new Map<string, ReturnType<typeof setTimeout>>();
 
+function addressOf(handshake: {
+  address: string;
+  headers: Record<string, string | string[] | undefined>;
+}): string {
+  const forwarded = handshake.headers['x-forwarded-for'];
+  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0];
+  const ip = first?.trim();
+  if (ip !== undefined && ip !== '') return ip;
+  return handshake.address || 'unknown';
+}
+
+function ejectPlayer(
+  io: TypedServer,
+  room: Room,
+  manager: RoomManager,
+  targetId: string,
+  notice: string,
+): string | undefined {
+  const target = room.getPlayer(targetId);
+  if (target === undefined) return undefined;
+  cancelRemoval(targetId);
+  room.removePlayer(targetId);
+  io.sockets.sockets.get(targetId)?.disconnect(true);
+  if (room.isEmpty()) {
+    manager.deleteRoom(room.roomId);
+    return target.name;
+  }
+  room.game?.onPlayerLeft(targetId);
+  room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
+  announce(io, room, notice);
+  return target.name;
+}
+
 function cancelRemoval(socketId: string): void {
   const timer = pendingRemovals.get(socketId);
   if (timer !== undefined) {
@@ -501,9 +610,7 @@ function scheduleRemoval(
   pendingRemovals.set(socketId, timer);
 }
 
-function leaveCurrentRoom(  socket: TypedSocket,
-  manager: RoomManager,
-): Room | undefined {
+function leaveCurrentRoom(socket: TypedSocket, manager: RoomManager): Room | undefined {
   const room =
     socket.data.roomId !== undefined
       ? manager.getRoom(socket.data.roomId)

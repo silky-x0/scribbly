@@ -5,10 +5,8 @@ import { Server } from 'socket.io';
 import { registerHandlers } from '@/classes/MessageHandler';
 import { roomManager } from '@/classes/RoomManager';
 import { env } from '@/config/env.config';
-import type {
-  ClientToServerEvents,
-  ServerToClientEvents,
-} from '@/types/socket-events';
+import { listCategories } from '@/services/WordService';
+import type { ClientToServerEvents, ServerToClientEvents } from '@/types/socket-events';
 import type { SocketData } from '@/types/socket';
 import type { DefaultEventsMap } from 'socket.io';
 
@@ -24,16 +22,18 @@ app.get('/api/rooms/public', (_req, res) => {
   res.json({ rooms: roomManager.listPublicRooms() });
 });
 
-const httpServer = createServer(app);
-const io = new Server<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  DefaultEventsMap,
-  SocketData
->(httpServer, {
-  cors: { origin: env.clientUrls },
-  transports: ['websocket', 'polling'],
+app.get('/api/words/categories', (_req, res) => {
+  res.json({ categories: listCategories() });
 });
+
+const httpServer = createServer(app);
+const io = new Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>(
+  httpServer,
+  {
+    cors: { origin: env.clientUrls },
+    transports: ['websocket', 'polling'],
+  },
+);
 
 io.on('connection', (socket) => {
   console.log(`[ws] connected: ${socket.id}`);

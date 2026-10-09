@@ -1,4 +1,5 @@
 import type { Point, RoomSettings } from '@/types/socket-events';
+import { listCategories } from '@/services/WordService';
 
 export const DEFAULT_SETTINGS: RoomSettings = {
   maxPlayers: 8,
@@ -8,20 +9,14 @@ export const DEFAULT_SETTINGS: RoomSettings = {
   hints: 2,
   wordMode: 'Normal',
   isPrivate: false,
+  categories: [],
+  customWords: [],
+  customOnly: false,
 };
 
-const WORD_MODES: RoomSettings['wordMode'][] = [
-  'Normal',
-  'Hidden',
-  'Combination',
-];
+const WORD_MODES: RoomSettings['wordMode'][] = ['Normal', 'Hidden', 'Combination'];
 
-function clampInt(
-  value: unknown,
-  fallback: number,
-  min: number,
-  max: number,
-): number {
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return fallback;
   }
@@ -34,7 +29,6 @@ function clampWordMode(value: unknown): RoomSettings['wordMode'] {
     : DEFAULT_SETTINGS.wordMode;
 }
 
-
 export function clampSettings(input: Partial<RoomSettings>): RoomSettings {
   return {
     maxPlayers: clampInt(input.maxPlayers, DEFAULT_SETTINGS.maxPlayers, 2, 20),
@@ -43,20 +37,42 @@ export function clampSettings(input: Partial<RoomSettings>): RoomSettings {
     wordCount: clampInt(input.wordCount, DEFAULT_SETTINGS.wordCount, 1, 5),
     hints: clampInt(input.hints, DEFAULT_SETTINGS.hints, 0, 5),
     wordMode: clampWordMode(input.wordMode),
-    isPrivate:
-      typeof input.isPrivate === 'boolean'
-        ? input.isPrivate
-        : DEFAULT_SETTINGS.isPrivate,
+    isPrivate: typeof input.isPrivate === 'boolean' ? input.isPrivate : DEFAULT_SETTINGS.isPrivate,
+    categories: cleanCategories(input.categories),
+    customWords: cleanWordList(input.customWords),
+    customOnly:
+      typeof input.customOnly === 'boolean' ? input.customOnly : DEFAULT_SETTINGS.customOnly,
   };
+}
+
+export const MAX_CUSTOM_WORDS = 50;
+export const MAX_CUSTOM_WORD_LENGTH = 30;
+
+function cleanCategories(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const known = listCategories();
+  return [...new Set(value.filter((v): v is string => typeof v === 'string' && known.includes(v)))];
+}
+
+function cleanWordList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue;
+    const word = entry.trim().replace(/\s+/g, ' ');
+    if (word.length === 0 || word.length > MAX_CUSTOM_WORD_LENGTH) continue;
+    if (!out.includes(word)) out.push(word);
+    if (out.length >= MAX_CUSTOM_WORDS) break;
+  }
+  return out;
 }
 
 export const MAX_NAME_LENGTH = 20;
 
-export type NameValidation =
-  | { ok: true; name: string }
-  | { ok: false; error: string };
+export type NameValidation = { ok: true; name: string } | { ok: false; error: string };
 
-export function validatePlayerName(raw: unknown): NameValidation {  if (typeof raw !== 'string') {
+export function validatePlayerName(raw: unknown): NameValidation {
+  if (typeof raw !== 'string') {
     return { ok: false, error: 'Name must be a string.' };
   }
   const name = raw.trim().replace(/\s+/g, ' ');

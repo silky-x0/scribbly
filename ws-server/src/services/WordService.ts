@@ -24,18 +24,32 @@ function shuffled<T>(items: readonly T[]): T[] {
   return out;
 }
 
+export interface WordPoolOptions {
+  categories?: string[];
+  combineWords?: boolean;
+  customWords?: string[];
+  customOnly?: boolean;
+}
+
+function basePool(opts: WordPoolOptions): string[] {
+  const custom = (opts.customWords ?? []).filter((w) => w.length > 0);
+  if (opts.customOnly === true && custom.length > 0) return [...custom];
+  return [...custom, ...allWords(opts.categories)];
+}
+
 export function drawWordOptions(
   count: number,
   used: ReadonlySet<string>,
-  categories?: string[],
-  combineWords = false,
+  opts: WordPoolOptions = {},
 ): string[] {
-  const pool = allWords(categories);
+  const pool = basePool(opts);
   if (pool.length === 0) return [];
   const fresh = pool.filter((w) => !used.has(w));
   const candidates = fresh.length >= count ? fresh : pool;
   const shuffledPool = shuffled(candidates);
-  if (!combineWords) return shuffledPool.slice(0, Math.max(1, count));
+  if (opts.combineWords !== true) {
+    return shuffledPool.slice(0, Math.max(1, count));
+  }
   const out: string[] = [];
   for (let i = 0; i + 1 < shuffledPool.length && out.length < count; i += 2) {
     const a = shuffledPool[i];

@@ -8,13 +8,14 @@ import { normalizeRoomCode } from '@/utils/roomCode';
 import type { Game } from '@/classes/Game';
 import type { Player } from '@/classes/Player';
 
-export type AddPlayerResult =
-  | { ok: true; player: Player }
-  | { ok: false; error: string };
+export type AddPlayerResult = { ok: true; player: Player } | { ok: false; error: string };
 
 export class Room {
   players: Player[] = [];
   game: Game | null = null;
+  readonly bannedIds = new Set<string>();
+  readonly bannedIps = new Set<string>();
+  readonly votekicks = new Map<string, Set<string>>();
 
   constructor(
     public readonly roomId: string,
@@ -53,9 +54,11 @@ export class Room {
 
   findAwayByName(name: string): Player | undefined {
     const needle = normalizeRoomCode(name);
-    return this.players.find(
-      (p) => !p.isConnected && normalizeRoomCode(p.name) === needle,
-    );
+    return this.players.find((p) => !p.isConnected && normalizeRoomCode(p.name) === needle);
+  }
+
+  isBanned(socketId: string, ip: string): boolean {
+    return this.bannedIds.has(socketId) || this.bannedIps.has(ip);
   }
 
   addPlayer(player: Player): AddPlayerResult {
@@ -75,6 +78,12 @@ export class Room {
       return undefined;
     }
     const [removed] = this.players.splice(idx, 1);
+    for (const [target, voters] of this.votekicks) {
+      voters.delete(socketId);
+      if (voters.size === 0 || target === socketId) {
+        this.votekicks.delete(target);
+      }
+    }
     if (removed.isHost && this.players.length > 0) {
       const nextHost = this.players[0];
       nextHost.isHost = true;
@@ -100,6 +109,8 @@ export class Room {
     event: TEvent,
     ...args: Parameters<ServerToClientEvents[TEvent]>
   ): void {
-    io.to(this.roomId).except(exceptSocketId).emit(event, ...args);
+    io.to(this.roomId)
+      .except(exceptSocketId)
+      .emit(event, ...args);
   }
 }

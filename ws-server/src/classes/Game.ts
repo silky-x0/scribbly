@@ -8,10 +8,7 @@ import type {
 import { SYSTEM_SENDER_ID } from '../types/socket-events';
 import type { Player } from './Player';
 import { maskWord, revealRandomLetter } from '../services/HintService';
-import {
-  DRAWER_POINTS_PER_GUESS,
-  guesserPoints,
-} from '../services/ScoreService';
+import { DRAWER_POINTS_PER_GUESS, guesserPoints } from '../services/ScoreService';
 import { drawWordOptions } from '../services/WordService';
 import { levenshtein, normalizeText } from '../utils/text';
 
@@ -39,10 +36,7 @@ export interface GameHooks {
 export type WordChoice = { ok: true } | { ok: false; error: string };
 
 export type GuessOutcome =
-  | { kind: 'ignored' }
-  | { kind: 'wrong' }
-  | { kind: 'close' }
-  | { kind: 'correct'; points: number };
+  { kind: 'ignored' } | { kind: 'wrong' } | { kind: 'close' } | { kind: 'correct'; points: number };
 
 export class Game {
   phase: GamePhase = 'LOBBY';
@@ -84,10 +78,7 @@ export class Game {
   }
 
   isDrawer(socketId: string): boolean {
-    return (
-      this.phase === 'DRAWING' &&
-      this.turnOrder[this.currentDrawerIdx] === socketId
-    );
+    return this.phase === 'DRAWING' && this.turnOrder[this.currentDrawerIdx] === socketId;
   }
 
   chooseWord(socketId: string, word: string): WordChoice {
@@ -105,9 +96,7 @@ export class Game {
   }
 
   remapPlayer(oldSocketId: string, newSocketId: string): void {
-    this.turnOrder = this.turnOrder.map((id) =>
-      id === oldSocketId ? newSocketId : id,
-    );
+    this.turnOrder = this.turnOrder.map((id) => (id === oldSocketId ? newSocketId : id));
     if (this.guessedPlayerIds.delete(oldSocketId)) {
       this.guessedPlayerIds.add(newSocketId);
     }
@@ -205,17 +194,16 @@ export class Game {
     const drawer = players.find((p) => p.id === drawerId);
     if (drawerId === undefined || drawer === undefined) {
       // Slot belongs to someone who left: consume the slot, keep round shape.
-      this.currentDrawerIdx =
-        (this.currentDrawerIdx + 1) % this.turnOrder.length;
+      this.currentDrawerIdx = (this.currentDrawerIdx + 1) % this.turnOrder.length;
       this.startTurn(skips + 1);
       return;
     }
-    this.wordOptions = drawWordOptions(
-      this.settings.wordCount,
-      this.usedWords,
-      undefined,
-      this.settings.wordMode === 'Combination',
-    );
+    this.wordOptions = drawWordOptions(this.settings.wordCount, this.usedWords, {
+      categories: this.settings.categories,
+      combineWords: this.settings.wordMode === 'Combination',
+      customWords: this.settings.customWords,
+      customOnly: this.settings.customOnly,
+    });
     for (const w of this.wordOptions) this.usedWords.add(w);
     this.currentWord = null;
     this.timeLeft = this.settings.drawTime;
@@ -231,8 +219,7 @@ export class Game {
       wordOptions: null,
       drawTime,
     });
-    const drawerName =
-      players.find((p) => p.id === drawerId)?.name ?? 'Someone';
+    const drawerName = players.find((p) => p.id === drawerId)?.name ?? 'Someone';
     this.hooks.broadcast('chat_message', {
       playerId: SYSTEM_SENDER_ID,
       playerName: 'System',
@@ -243,8 +230,7 @@ export class Game {
       if (this.phase !== 'WORD_SELECTION' || this.wordOptions.length === 0) {
         return;
       }
-      const fallback =
-        this.wordOptions[Math.floor(Math.random() * this.wordOptions.length)];
+      const fallback = this.wordOptions[Math.floor(Math.random() * this.wordOptions.length)];
       if (fallback !== undefined) this.beginDrawing(fallback);
     }, WORD_SELECTION_SECONDS * 1000);
   }
@@ -264,8 +250,7 @@ export class Game {
     this.hooks.broadcast('hint_update', { hints: [...this.hintsRevealed] });
     if (this.settings.wordMode === 'Normal' && this.settings.hints > 0) {
       for (let i = 1; i <= this.settings.hints; i += 1) {
-        const atMs =
-          (this.settings.drawTime * i * 1000) / (this.settings.hints + 1);
+        const atMs = (this.settings.drawTime * i * 1000) / (this.settings.hints + 1);
         const timer = setTimeout(() => {
           if (this.phase !== 'DRAWING') return;
           const next = revealRandomLetter(this.hintsRevealed, word);
@@ -296,8 +281,7 @@ export class Game {
     const word = this.currentWord ?? '(no word)';
     const scores = players.map((p) => ({ id: p.id, name: p.name, score: p.score }));
     const nextDrawerId =
-      this.turnOrder[(this.currentDrawerIdx + 1) % this.turnOrder.length] ??
-      null;
+      this.turnOrder[(this.currentDrawerIdx + 1) % this.turnOrder.length] ?? null;
     this.phase = 'ROUND_END';
     this.hooks.broadcast('round_end', { word, scores, nextDrawerId });
     this.hooks.broadcast('chat_message', {
@@ -332,9 +316,7 @@ export class Game {
       .map((p) => ({ ...p }))
       .sort((a, b) => b.score - a.score);
     const topScorer =
-      this.topScorerId === null
-        ? undefined
-        : leaderboard.find((p) => p.id === this.topScorerId);
+      this.topScorerId === null ? undefined : leaderboard.find((p) => p.id === this.topScorerId);
     const winner = topScorer ?? leaderboard[0] ?? null;
     this.hooks.broadcast('game_over', { winner, leaderboard });
   }
