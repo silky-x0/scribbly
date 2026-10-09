@@ -16,6 +16,8 @@ import { Player } from '@/classes/Player';
 
 export const MIN_PLAYERS_TO_START = 2;
 
+export type EjectReason = 'kicked' | 'banned' | 'votekicked';
+
 export function registerHandlers(
   io: TypedServer,
   socket: TypedSocket,
@@ -284,7 +286,7 @@ export function registerHandlers(
       return;
     }
     ack({ ok: true });
-    ejectPlayer(io, room, manager, target.id, `${target.name} was removed by the host.`);
+    ejectPlayer(io, room, manager, target.id, `${target.name} was removed by the host.`, 'kicked');
   });
 
   socket.on('ban_player', (payload, ack) => {
@@ -309,7 +311,7 @@ export function registerHandlers(
       room.bannedIps.add(addressOf(targetSocket.handshake));
     }
     ack({ ok: true });
-    ejectPlayer(io, room, manager, target.id, `${target.name} was banned by the host.`);
+    ejectPlayer(io, room, manager, target.id, `${target.name} was banned by the host.`, 'banned');
   });
 
   socket.on('votekick', (payload, ack) => {
@@ -348,7 +350,7 @@ export function registerHandlers(
     });
     if (voters.size >= needed) {
       room.votekicks.delete(target.id);
-      ejectPlayer(io, room, manager, target.id, `${target.name} was voted out.`);
+      ejectPlayer(io, room, manager, target.id, `${target.name} was voted out.`, 'votekicked');
     }
   });
 
@@ -562,19 +564,23 @@ function ejectPlayer(
   manager: RoomManager,
   targetId: string,
   notice: string,
+  reason: EjectReason,
 ): string | undefined {
   const target = room.getPlayer(targetId);
   if (target === undefined) return undefined;
   cancelRemoval(targetId);
   room.removePlayer(targetId);
-  io.sockets.sockets.get(targetId)?.disconnect(true);
   if (room.isEmpty()) {
     manager.deleteRoom(room.roomId);
-    return target.name;
+  } else {
+    room.game?.onPlayerLeft(targetId);
+    room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
+    announce(io, room, notice);
   }
-  room.game?.onPlayerLeft(targetId);
-  room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
-  announce(io, room, notice);
+  io.to(targetId).emit('kicked', { reason, message: notice });
+  const targetSocket = io.sockets.sockets.get(targetId);
+  targetSocket?.leave(room.roomId);
+  targetSocket?.disconnect(true);
   return target.name;
 }
 

@@ -53,6 +53,10 @@ export interface ServerToClientEvents {
     votes: number;
     needed: number;
   }) => void;
+  kicked: (payload: {
+    reason: 'kicked' | 'banned' | 'votekicked';
+    message: string;
+  }) => void;
   round_start: (payload: {
     drawerId: string;
     wordOptions: string[] | null; // null for non-drawers

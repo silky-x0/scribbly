@@ -8,10 +8,16 @@ Live URL: not deployed yet (see Deployment below).
 
 ## Features
 
-- Rooms: create (public/private, configurable settings) and join via code or
-  shareable invite link, with host migration and lobby readiness.
+- Rooms: create (public/private, categories, custom words, configurable
+  settings) and join via code, shareable link, public browser, or random
+  matchmaking, with host migration and lobby readiness.
+- Moderation: host kick/ban plus majority votekick. Removed players get a
+  removal dialog and a way back home; everyone else is notified through the
+  roster update and a system message (toasted in the lobby, shown in chat
+  in-game).
 - Turn engine: server-driven rounds, word selection with auto-pick, draw
-  timers, drawer-disconnect skips, winner + leaderboard at game over.
+  timers, drawer-disconnect skips, 45s reconnect grace with slot restore,
+  winner + leaderboard at game over, host-started lobby loop.
 - Live canvas: normalized coordinates (identical on all screen sizes),
   14 colors, 3 brush sizes, eraser, undo, clear, late-join canvas sync.
 - Guessing: normalized matching, private close-guess nudges, spoiler-free
@@ -50,8 +56,9 @@ Client on http://localhost:3000, server on http://localhost:3001. The root
 | `CLIENT_URL` | `ws-server/.env` | `http://localhost:3000` |
 | `NEXT_PUBLIC_SERVER_URL` | `webapp/client/.env.local` | `http://localhost:3001` |
 
-Typecheck and lint: `npm run typecheck|lint --prefix ws-server`,
-`npx tsc --noEmit` and `npm run lint --prefix webapp/client`.
+Typecheck and lint the server with `npm run typecheck|lint --prefix ws-server`;
+lint the client with `npm run lint --prefix webapp/client` and typecheck it
+with `npx tsc --noEmit` run inside `webapp/client`.
 
 ## Folder structure
 
@@ -61,7 +68,6 @@ scribbly/
 ├── ws-server/          # Socket.IO authority (classes/, services/, utils/, data/)
 ├── shared/             # socket-events.ts, source of truth for the contract
 ├── design.md           # visual direction (Sticker Mischief)
-└── IMPLEMENTATION_PLAN.md  # phased build plan (currently through Phase 5)
 ```
 
 ## Deployment (planned)

@@ -14,11 +14,12 @@ import {
   saveIdentity,
   saveLastRoom,
 } from '@/lib/session';
-import type {
-  GamePhase,
-  Player,
-  RoomSettings,
-  ServerToClientEvents,
+import {
+  SYSTEM_SENDER_ID,
+  type GamePhase,
+  type Player,
+  type RoomSettings,
+  type ServerToClientEvents,
 } from '@/types/socket-events';
 import type { GamePhaseView } from '@/components/game-view';
 
@@ -27,12 +28,20 @@ type RoundEndPayload = Parameters<ServerToClientEvents['round_end']>[0];
 type GameOverPayload = Parameters<ServerToClientEvents['game_over']>[0];
 type GameStatePayload = Parameters<ServerToClientEvents['game_state']>[0];
 type VotesPayload = Parameters<ServerToClientEvents['votekick_update']>[0];
+type KickedPayload = Parameters<ServerToClientEvents['kicked']>[0];
+type ChatMessagePayload = Parameters<ServerToClientEvents['chat_message']>[0];
 
 function friendlyJoinError(roomId: string, error: string): string {
   if (/not found/i.test(error)) {
     return `Room ${roomId} was not found. Check the code and try again.`;
   }
   return error;
+}
+
+function removalTitle(reason: KickedPayload['reason']): string {
+  if (reason === 'banned') return 'You were banned';
+  if (reason === 'votekicked') return 'You were voted out';
+  return 'You were kicked';
 }
 
 // External-store reads, so SSR and hydration agree without setState in effects.
@@ -60,6 +69,7 @@ export default function RoomPage() {
   const [players, setPlayers] = useState<Player[] | null>(null);
   const [settings, setSettings] = useState<RoomSettings | null>(null);
   const [myId, setMyId] = useState<string | null>(null);
+  const [removed, setRemoved] = useState<KickedPayload | null>(null);
   const [phase, setPhase] = useState<GamePhase | null>(null);
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [wordOptions, setWordOptions] = useState<string[]>([]);
@@ -74,6 +84,10 @@ export default function RoomPage() {
   useEffect(() => {
     playersRef.current = players;
   }, [players]);
+  const phaseRef = useRef<GamePhase | null>(null);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
   const [joined, setJoined] = useState(false);
   const needsName = useSyncExternalStore(
     subscribeIdentity,
@@ -158,6 +172,43 @@ export default function RoomPage() {
       socket.off('lobby_update', onRoster);
     };
   }, [socket]);
+
+  useEffect(() => {
+    const onKicked = (p: KickedPayload) => {
+      joinedRef.current = false;
+      setJoined(false);
+      setRemoved(p);
+      if (!socket.connected) socket.connect();
+    };
+    const onServerDisconnect = (reason: unknown) => {
+      if (reason === 'io server disconnect' && joinedRef.current) {
+        joinedRef.current = false;
+        setJoined(false);
+        setRemoved((prev) =>
+          prev ?? { reason: 'kicked', message: 'You were removed from the room.' },
+        );
+        socket.connect();
+      }
+    };
+    socket.on('kicked', onKicked);
+    socket.on('disconnect', onServerDisconnect);
+    return () => {
+      socket.off('kicked', onKicked);
+      socket.off('disconnect', onServerDisconnect);
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    const onSystem = (m: ChatMessagePayload) => {
+      if (m.playerId !== SYSTEM_SENDER_ID) return;
+      if (phaseRef.current !== null && phaseRef.current !== 'LOBBY') return;
+      pushToast(m.text, 'info');
+    };
+    socket.on('chat_message', onSystem);
+    return () => {
+      socket.off('chat_message', onSystem);
+    };
+  }, [socket, pushToast]);
 
   useEffect(() => {
     const onRoundStart = (p: RoundStartPayload) => {
@@ -289,6 +340,11 @@ export default function RoomPage() {
       joinedRef.current = false;
       router.push('/');
     });
+  }
+
+  function backHomeAfterRemoval() {
+    if (!socket.connected) socket.connect();
+    router.push('/');
   }
 
   async function copyInvite() {
@@ -532,6 +588,19 @@ export default function RoomPage() {
       </main>
       )}
       <Toaster toasts={toasts} />
+      {removed !== null && (
+        <div className="dialog-backdrop">
+          <section className="lobby-dialog" role="dialog" aria-label="Removed from room">
+            <h2 className="card-title">{removalTitle(removed.reason)}</h2>
+            <p className="lobby-note">{removed.message}</p>
+            <div className="entry-actions">
+              <Button type="button" variant="play" onClick={backHomeAfterRemoval}>
+                Back home
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
