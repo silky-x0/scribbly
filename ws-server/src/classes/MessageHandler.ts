@@ -54,7 +54,7 @@ export function registerHandlers(
     }
     socket.join(room.roomId);
     socket.data.roomId = room.roomId;
-    ack({ ok: true, player: { ...result.player } });
+    ack({ ok: true, player: { ...result.player }, settings: room.settings });
     room.broadcast(io, 'player_joined', { players: room.toPlayersPayload() });
   });
 
@@ -82,6 +82,28 @@ export function registerHandlers(
     }
     // Phase 3 turns this into the real turn-based state machine.
     ack({ ok: true });
+  });
+
+  socket.on('toggle_ready', (payload, ack) => {
+    const room = currentRoom(socket, manager);
+    if (room === undefined || !room.setReady(socket.id, payload.isReady)) {
+      ack({ ok: false, error: 'You are not in a room.' });
+      return;
+    }
+    ack({ ok: true });
+    room.broadcast(io, 'lobby_update', { players: room.toPlayersPayload() });
+  });
+
+  socket.on('leave_room', (ack) => {
+    const room = leaveCurrentRoom(socket, manager);
+    if (room === undefined) {
+      ack({ ok: false, error: 'You are not in a room.' });
+      return;
+    }
+    ack({ ok: true });
+    if (!room.isEmpty()) {
+      room.broadcast(io, 'player_left', { players: room.toPlayersPayload() });
+    }
   });
 
   socket.on('disconnect', () => {

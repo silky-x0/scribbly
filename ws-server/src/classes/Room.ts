@@ -36,6 +36,16 @@ export class Room {
     return this.players.find((p) => p.id === socketId);
   }
 
+  /** Flip a player's ready flag. Returns false for unknown players. */
+  setReady(socketId: string, isReady: boolean): boolean {
+    const player = this.getPlayer(socketId);
+    if (player === undefined) {
+      return false;
+    }
+    player.isReady = isReady;
+    return true;
+  }
+
   hasName(name: string): boolean {
     const needle = normalizeRoomCode(name);
     return this.players.some((p) => normalizeRoomCode(p.name) === needle);
