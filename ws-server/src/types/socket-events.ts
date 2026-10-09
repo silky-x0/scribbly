@@ -120,6 +120,9 @@ export interface ClientToServerEvents {
     payload: { isReady: boolean },
     ack: (res: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
+  play_again: (
+    ack: (res: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
   leave_room: (
     ack: (res: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
