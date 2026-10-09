@@ -40,6 +40,7 @@ export class Game {
   wordOptions: string[] = [];
   timeLeft = 0;
   strokes: Stroke[] = [];
+  activeStroke: Stroke | null = null;
   guessedPlayerIds = new Set<string>();
   hintsRevealed: string[] = [];
   private usedWords = new Set<string>();
@@ -64,8 +65,14 @@ export class Game {
     this.startTurn();
   }
 
-  chooseWord(socketId: string, word: string): WordChoice {
-    if (this.phase !== 'WORD_SELECTION') {
+  isDrawer(socketId: string): boolean {
+    return (
+      this.phase === 'DRAWING' &&
+      this.turnOrder[this.currentDrawerIdx] === socketId
+    );
+  }
+
+  chooseWord(socketId: string, word: string): WordChoice {    if (this.phase !== 'WORD_SELECTION') {
       return { ok: false, error: 'Not choosing a word right now.' };
     }
     if (socketId !== this.turnOrder[this.currentDrawerIdx]) {
@@ -150,6 +157,7 @@ export class Game {
 
   private beginDrawing(word: string): void {
     this.clearTimers();
+    this.activeStroke = null;
     this.currentWord = word;
     this.wordOptions = [];
     this.strokes = [];
@@ -174,6 +182,7 @@ export class Game {
   private endTurn(): void {
     if (this.phase !== 'WORD_SELECTION' && this.phase !== 'DRAWING') return;
     this.clearTimers();
+    this.activeStroke = null;
     const players = this.hooks.getPlayers();
     const word = this.currentWord ?? '(no word)';
     const scores = players.map((p) => ({ id: p.id, name: p.name, score: p.score }));

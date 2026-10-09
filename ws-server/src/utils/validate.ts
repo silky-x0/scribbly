@@ -1,4 +1,4 @@
-import type { RoomSettings } from '@/types/socket-events';
+import type { Point, RoomSettings } from '@/types/socket-events';
 
 export const DEFAULT_SETTINGS: RoomSettings = {
   maxPlayers: 8,
@@ -56,8 +56,7 @@ export type NameValidation =
   | { ok: true; name: string }
   | { ok: false; error: string };
 
-export function validatePlayerName(raw: unknown): NameValidation {
-  if (typeof raw !== 'string') {
+export function validatePlayerName(raw: unknown): NameValidation {  if (typeof raw !== 'string') {
     return { ok: false, error: 'Name must be a string.' };
   }
   const name = raw.trim().replace(/\s+/g, ' ');
@@ -71,4 +70,25 @@ export function validatePlayerName(raw: unknown): NameValidation {
     };
   }
   return { ok: true, name };
+}
+
+const MAX_BRUSH_SIZE = 50;
+const MAX_COLOR_LENGTH = 32;
+
+export function validPoint(x: unknown, y: unknown): Point | null {
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+}
+
+export function validSize(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return Math.min(MAX_BRUSH_SIZE, Math.max(1, Math.round(value)));
+}
+
+export function validColor(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const color = value.trim();
+  if (color.length === 0 || color.length > MAX_COLOR_LENGTH) return null;
+  return color;
 }

@@ -1,8 +1,16 @@
+import { randomUUID } from 'node:crypto';
 import type { Room } from '@/classes/Room';
 import { Game } from '@/classes/Game';
 import { RoomManager, roomManager } from '@/classes/RoomManager';
+import type { Stroke } from '@/types/socket-events';
 import type { TypedServer, TypedSocket } from '@/types/socket';
-import { clampSettings, validatePlayerName } from '@/utils/validate';
+import {
+  clampSettings,
+  validColor,
+  validPoint,
+  validSize,
+  validatePlayerName,
+} from '@/utils/validate';
 import { Player } from '@/classes/Player';
 
 export const MIN_PLAYERS_TO_START = 2;
@@ -47,6 +55,19 @@ export function registerHandlers(
       ack({ ok: false, error: nameResult.error });
       return;
     }
+    // Member rejoin: leaving first would empty and delete a live room.
+    const existing = room.getPlayer(socket.id);
+    if (existing !== undefined) {
+      socket.join(room.roomId);
+      socket.data.roomId = room.roomId;
+      ack({
+        ok: true,
+        player: { ...existing },
+        settings: room.settings,
+        players: room.toPlayersPayload(),
+      });
+      return;
+    }
     const leftRoom = leaveCurrentRoom(socket, manager);
     if (leftRoom !== undefined && leftRoom !== room) {
       leftRoom.game?.onPlayerLeft(socket.id);
@@ -58,7 +79,12 @@ export function registerHandlers(
     }
     socket.join(room.roomId);
     socket.data.roomId = room.roomId;
-    ack({ ok: true, player: { ...result.player }, settings: room.settings });
+    ack({
+      ok: true,
+      player: { ...result.player },
+      settings: room.settings,
+      players: room.toPlayersPayload(),
+    });
     room.broadcast(io, 'player_joined', { players: room.toPlayersPayload() });
     // Late joiners mid-game get a snapshot so their UI matches the phase.
     if (
@@ -119,6 +145,92 @@ export function registerHandlers(
     room?.game?.chooseWord(socket.id, payload.word);
   });
 
+  socket.on('draw_start', (payload) => {
+    const ctx = drawingGame(socket, manager);
+    if (ctx === undefined) return;
+    const { room, game } = ctx;
+    const point = validPoint(payload.x, payload.y);
+    const size = validSize(payload.size);
+    const color = validColor(payload.color);
+    if (point === null || size === null || color === null) return;
+    const tool = payload.tool === 'eraser' ? 'eraser' : 'brush';
+    const stroke: Stroke = {
+      id: randomUUID(),
+      color,
+      size,
+      tool,
+      points: [point],
+    };
+    game.strokes.push(stroke);
+    game.activeStroke = stroke;
+    room.broadcastExcept(io, socket.id, 'draw_data', {
+      strokeId: stroke.id,
+      x: point.x,
+      y: point.y,
+      color,
+      size,
+      tool,
+      phase: 'start',
+    });
+  });
+
+  socket.on('draw_move', (payload) => {
+    const ctx = drawingGame(socket, manager);
+    if (ctx === undefined) return;
+    const { room, game } = ctx;
+    const stroke = game.activeStroke;
+    if (stroke === null) return;
+    const point = validPoint(payload.x, payload.y);
+    if (point === null) return;
+    stroke.points.push(point);
+    room.broadcastExcept(io, socket.id, 'draw_data', {
+      strokeId: stroke.id,
+      x: point.x,
+      y: point.y,
+      color: stroke.color,
+      size: stroke.size,
+      tool: stroke.tool,
+      phase: 'move',
+    });
+  });
+
+  socket.on('draw_end', () => {
+    const ctx = drawingGame(socket, manager);
+    if (ctx === undefined) return;
+    const { room, game } = ctx;
+    const stroke = game.activeStroke;
+    game.activeStroke = null;
+    if (stroke === null) return;
+    const last = stroke.points[stroke.points.length - 1] ?? { x: 0, y: 0 };
+    room.broadcastExcept(io, socket.id, 'draw_data', {
+      strokeId: stroke.id,
+      x: last.x,
+      y: last.y,
+      color: stroke.color,
+      size: stroke.size,
+      tool: stroke.tool,
+      phase: 'end',
+    });
+  });
+
+  socket.on('undo_stroke', () => {
+    const ctx = drawingGame(socket, manager);
+    if (ctx === undefined) return;
+    const { room, game } = ctx;
+    game.activeStroke = null;
+    if (game.strokes.pop() === undefined) return;
+    room.broadcast(io, 'draw_undo', { strokes: game.strokes });
+  });
+
+  socket.on('clear_canvas', () => {
+    const ctx = drawingGame(socket, manager);
+    if (ctx === undefined) return;
+    const { room, game } = ctx;
+    game.strokes = [];
+    game.activeStroke = null;
+    room.broadcast(io, 'canvas_clear');
+  });
+
   socket.on('toggle_ready', (payload, ack) => {
     const room = currentRoom(socket, manager);
     if (room === undefined || !room.setReady(socket.id, payload.isReady)) {
@@ -161,6 +273,19 @@ function currentRoom(
     return manager.findRoomByPlayer(socket.id);
   }
   return manager.getRoom(roomId);
+}
+
+function drawingGame(
+  socket: TypedSocket,
+  manager: RoomManager,
+): { room: Room; game: Game } | undefined {
+  const room = currentRoom(socket, manager);
+  const game = room?.game;
+  if (room === undefined || game === null || game === undefined) {
+    return undefined;
+  }
+  if (!game.isDrawer(socket.id)) return undefined;
+  return { room, game };
 }
 
 function leaveCurrentRoom(

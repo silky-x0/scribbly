@@ -86,4 +86,13 @@ export class Room {
   ): void {
     io.to(this.roomId).emit(event, ...args);
   }
+
+  broadcastExcept<TEvent extends keyof ServerToClientEvents>(
+    io: TypedServer,
+    exceptSocketId: string,
+    event: TEvent,
+    ...args: Parameters<ServerToClientEvents[TEvent]>
+  ): void {
+    io.to(this.roomId).except(exceptSocketId).emit(event, ...args);
+  }
 }
