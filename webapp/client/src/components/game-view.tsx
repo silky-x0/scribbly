@@ -113,7 +113,7 @@ export function GameView({
           <h3 className="field-label">PLAYERS</h3>
           <ul className="player-list">
             {players.map((p) => (
-              <li key={p.id} className="player-row">
+              <li key={p.id} className={`player-row${p.isConnected ? '' : ' is-away'}`}>
                 <span className="player-avatar" aria-hidden="true">
                   {p.name.charAt(0).toUpperCase()}
                 </span>
@@ -125,6 +125,7 @@ export function GameView({
                   )}
                 </span>
                 {p.isHost && <span className="host-badge">HOST</span>}
+                {!p.isConnected && <span className="ready-pill">Away</span>}
                 {p.id !== drawerId && p.hasGuessed && (
                   <span className="ready-pill is-ready">
                     <Check size={13} /> Guessed

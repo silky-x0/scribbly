@@ -175,6 +175,7 @@ export default function RoomPage() {
     const onState = (p: GameStatePayload) => {
       setPhase(p.phase);
       setTimeLeft(p.timeLeft);
+      setPlayers(p.players);
     };
     const onRoundEnd = (p: RoundEndPayload) => {
       setPhase('ROUND_END');
@@ -244,6 +245,14 @@ export default function RoomPage() {
     setPickedWord(word);
   }
 
+  function backToLobby() {
+    setBusy('start');
+    socket.emit('play_again', (res) => {
+      setBusy(null);
+      if (!res.ok) pushToast(res.error, 'error');
+    });
+  }
+
   function leave() {
     setBusy('leave');
     const timer = setTimeout(() => router.push('/'), ACK_TIMEOUT_MS);
@@ -266,7 +275,9 @@ export default function RoomPage() {
 
   const me = players?.find((p) => p.id === myId) ?? null;
   const canStart =
-    me?.isHost === true && (players?.length ?? 0) >= 2 && busy === null;
+    me?.isHost === true &&
+    (players?.filter((p) => p.isConnected).length ?? 0) >= 2 &&
+    busy === null;
   const guessing =
     phase === 'DRAWING' && myId !== null && myId !== drawerId && !(me?.hasGuessed ?? false);
   const gamePhase: GamePhaseView | 'GAME_OVER' | null =
@@ -329,8 +340,8 @@ export default function RoomPage() {
                 </ul>
                 <div className="entry-actions">
                   {me?.isHost === true && (
-                    <Button type="button" variant="play" disabled={busy !== null} onClick={startGame}>
-                      {busy === 'start' ? 'Starting…' : 'Play again'}
+                    <Button type="button" variant="play" disabled={busy !== null} onClick={backToLobby}>
+                      Play again
                     </Button>
                   )}
                   <Button type="button" variant="paper" disabled={busy === 'leave'} onClick={leave}>
@@ -338,7 +349,7 @@ export default function RoomPage() {
                   </Button>
                 </div>
                 {me?.isHost !== true && (
-                  <p className="lobby-note">Waiting for the host to start again…</p>
+                  <p className="lobby-note">Waiting for the host to return to the lobby…</p>
                 )}
               </section>
             </div>
@@ -416,7 +427,7 @@ export default function RoomPage() {
             ) : (
               <ul className="player-list">
                 {players.map((p) => (
-                  <li key={p.id} className="player-row">
+                  <li key={p.id} className={`player-row${p.isConnected ? '' : ' is-away'}`}>
                     <span className="player-avatar" aria-hidden="true">
                       {p.name.charAt(0).toUpperCase()}
                     </span>
@@ -425,6 +436,7 @@ export default function RoomPage() {
                       {p.id === myId && ' (you)'}
                     </span>
                     {p.isHost && <span className="host-badge">HOST</span>}
+                    {!p.isConnected && <span className="ready-pill">Away</span>}
                     <span className={`ready-pill${p.isReady ? ' is-ready' : ''}`}>
                       {p.isReady ? <Check size={13} /> : null}
                       {p.isReady ? 'Ready' : 'Not ready'}

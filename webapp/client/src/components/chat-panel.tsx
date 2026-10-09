@@ -92,6 +92,9 @@ export function ChatPanel({
   return (
     <div className="chat-panel">
       <div className="chat-list" role="log" aria-label="Guesses and chat">
+        {lines.length === 0 && (
+          <p className="chat-empty">No messages yet — guess or say hi.</p>
+        )}
         {lines.map((l) => (
           <p key={l.id} className={`chat-line chat-${l.kind}${l.mine ? ' chat-mine' : ''}`}>
             {l.kind === 'chat' && (
