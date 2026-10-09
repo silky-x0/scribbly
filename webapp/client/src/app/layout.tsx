@@ -1,4 +1,5 @@
 import localFont from "next/font/local";
+import { SocketProvider } from "@/context/SocketContext";
 import "./globals.css";
 
 const jakarta = localFont({
@@ -26,7 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full">
       <body className={`${jakarta.variable} ${syne.variable} min-h-full`}>
-        {children}
+        <SocketProvider>{children}</SocketProvider>
       </body>
     </html>
   );
