@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Clock3, Eraser, LogOut, Pencil, Trash2, Undo2 } from 'lucide-react';import { Button } from '@/components/ui/button';
+import { Check, Clock3, Eraser, LogOut, Pencil, Trash2, Undo2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ChatPanel } from '@/components/chat-panel';
 import { GameCanvas } from '@/components/game-canvas';
 import {
   BRUSH_SIZES,
@@ -35,6 +37,9 @@ export function GameView({
   timeLeft,
   roundEnd,
   endTitle,
+  hints,
+  guessing,
+  prevScores,
   onPickWord,
   onLeave,
   leaving,
@@ -49,6 +54,9 @@ export function GameView({
   timeLeft: number;
   roundEnd: RoundEnd | null;
   endTitle: string;
+  hints: string[] | null;
+  guessing: boolean;
+  prevScores: Record<string, number> | null;
   onPickWord: (word: string) => void;
   onLeave: () => void;
   leaving: boolean;
@@ -101,6 +109,33 @@ export function GameView({
   return (
     <div className="game-wrap">
       <div className="game-grid">
+        <aside className="game-players" aria-label="Players">
+          <h3 className="field-label">PLAYERS</h3>
+          <ul className="player-list">
+            {players.map((p) => (
+              <li key={p.id} className="player-row">
+                <span className="player-avatar" aria-hidden="true">
+                  {p.name.charAt(0).toUpperCase()}
+                </span>
+                <span className="player-name">
+                  {p.name}
+                  {p.id === myId && ' (you)'}
+                  {p.id === drawerId && (
+                    <Pencil size={13} aria-label="drawing now" />
+                  )}
+                </span>
+                {p.isHost && <span className="host-badge">HOST</span>}
+                {p.id !== drawerId && p.hasGuessed && (
+                  <span className="ready-pill is-ready">
+                    <Check size={13} /> Guessed
+                  </span>
+                )}
+                <span className="player-score">{p.score}</span>
+              </li>
+            ))}
+          </ul>
+        </aside>
+        <div className="game-center">
         <div className="drawing-paper">
           <div className="drawing-top">
             <span>{phaseLabel}</span>
@@ -123,6 +158,11 @@ export function GameView({
               </Button>
             </span>
           </div>
+          {!isDrawer && phase === 'DRAWING' && hints !== null && (
+            <div className="hint-bar" aria-label="Word hint">
+              {hints.join(' ')}
+            </div>
+          )}
           <GameCanvas socket={socket} drawing={canDraw} tool={{ tool, color, size }} />
           {canDraw && (
             <div className="drawing-toolbar">
@@ -190,26 +230,10 @@ export function GameView({
             </div>
           )}
         </div>
-        <aside aria-label="Players">
-          <h3 className="field-label">PLAYERS</h3>
-          <ul className="player-list">
-            {players.map((p) => (
-              <li key={p.id} className="player-row">
-                <span className="player-avatar" aria-hidden="true">
-                  {p.name.charAt(0).toUpperCase()}
-                </span>
-                <span className="player-name">
-                  {p.name}
-                  {p.id === myId && ' (you)'}
-                  {p.id === drawerId && (
-                    <Pencil size={13} aria-label="drawing now" />
-                  )}
-                </span>
-                {p.isHost && <span className="host-badge">HOST</span>}
-                <span className="player-score">{p.score}</span>
-              </li>
-            ))}
-          </ul>
+        </div>
+        <aside className="game-chat" aria-label="Guesses and chat">
+          <h3 className="field-label">GUESSES</h3>
+          <ChatPanel socket={socket} myId={myId} guessing={guessing} />
         </aside>
       </div>
 
@@ -229,12 +253,19 @@ export function GameView({
           <section className="lobby-dialog" role="dialog" aria-label="Round over">
             <h2 className="card-title">The word was “{roundEnd.word}”</h2>
             <ul className="player-list">
-              {roundEnd.scores.map((s) => (
-                <li key={s.id} className="player-row">
-                  <span className="player-name">{s.name}</span>
-                  <span className="player-score">{s.score}</span>
-                </li>
-              ))}
+              {roundEnd.scores.map((s) => {
+                const before = prevScores?.[s.id];
+                const delta = before === undefined ? null : s.score - before;
+                return (
+                  <li key={s.id} className="player-row">
+                    <span className="player-name">{s.name}</span>
+                    <span className="player-score">
+                      {s.score}
+                      {delta !== null && delta > 0 && ` +${delta}`}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
             <p className="lobby-note">Next turn starting…</p>
           </section>

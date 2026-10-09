@@ -66,6 +66,12 @@ export default function RoomPage() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [roundEnd, setRoundEnd] = useState<RoundEndPayload | null>(null);
   const [gameOver, setGameOver] = useState<GameOverPayload | null>(null);
+  const [hints, setHints] = useState<string[] | null>(null);
+  const [prevScores, setPrevScores] = useState<Record<string, number> | null>(null);
+  const playersRef = useRef<Player[] | null>(null);
+  useEffect(() => {
+    playersRef.current = players;
+  }, [players]);
   const [joined, setJoined] = useState(false);
   const needsName = useSyncExternalStore(
     subscribeIdentity,
@@ -159,6 +165,10 @@ export default function RoomPage() {
       setTimeLeft(p.drawTime);
       setRoundEnd(null);
       setGameOver(null);
+      setHints(null);
+      const baseline: Record<string, number> = {};
+      for (const pl of playersRef.current ?? []) baseline[pl.id] = pl.score;
+      setPrevScores(baseline);
       setPhase('WORD_SELECTION');
     };
     const onTick = (p: { timeLeft: number }) => setTimeLeft(p.timeLeft);
@@ -183,17 +193,20 @@ export default function RoomPage() {
       setPhase('GAME_OVER');
       setGameOver(p);
     };
+    const onHint = (p: { hints: string[] }) => setHints(p.hints);
     socket.on('round_start', onRoundStart);
     socket.on('timer_tick', onTick);
     socket.on('game_state', onState);
     socket.on('round_end', onRoundEnd);
     socket.on('game_over', onGameOver);
+    socket.on('hint_update', onHint);
     return () => {
       socket.off('round_start', onRoundStart);
       socket.off('timer_tick', onTick);
       socket.off('game_state', onState);
       socket.off('round_end', onRoundEnd);
       socket.off('game_over', onGameOver);
+      socket.off('hint_update', onHint);
     };
   }, [socket]);
 
@@ -254,6 +267,8 @@ export default function RoomPage() {
   const me = players?.find((p) => p.id === myId) ?? null;
   const canStart =
     me?.isHost === true && (players?.length ?? 0) >= 2 && busy === null;
+  const guessing =
+    phase === 'DRAWING' && myId !== null && myId !== drawerId && !(me?.hasGuessed ?? false);
   const gamePhase: GamePhaseView | 'GAME_OVER' | null =
     phase === 'WORD_SELECTION' ||
     phase === 'DRAWING' ||
@@ -282,6 +297,9 @@ export default function RoomPage() {
             pickedWord={pickedWord}
             timeLeft={timeLeft}
             roundEnd={roundEnd}
+            hints={hints}
+            guessing={guessing}
+            prevScores={prevScores}
             endTitle={
               gameOver?.winner ? `${gameOver.winner.name} wins!` : 'Game over'
             }

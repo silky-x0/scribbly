@@ -168,8 +168,23 @@ h1 span { color: var(--primary); display: block; font-size: 2.6875rem; margin-to
 @media (max-width: 700px) { .lobby-wrap { padding: 28px 22px 48px; } .lobby-card { padding: 22px; } .settings-summary { grid-template-columns: repeat(2, 1fr); } .settings-grid { grid-template-columns: 1fr; } }
 
 /* Game view: paper canvas left, roster right, guess feed joins in Phase 5 */
-.game-wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 56px; display: grid; gap: 20px; }
-.game-grid { display: grid; grid-template-columns: 1fr 250px; gap: 24px; align-items: start; }
+.game-wrap { max-width: 1200px; margin: 0 auto; padding: 32px 24px 56px; display: grid; gap: 20px; }
+.game-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; grid-template-areas: 'players canvas chat'; gap: 24px; align-items: start; }
+.game-players { grid-area: players; min-width: 0; }
+.game-center { grid-area: canvas; min-width: 0; }
+.game-chat { grid-area: chat; min-width: 0; }
+.hint-bar { text-align: center; font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; letter-spacing: 0.35em; text-indent: 0.35em; padding: 10px 16px; border-bottom: 1px dashed var(--border); }
+.chat-panel { display: grid; gap: 10px; }
+.chat-list { display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; }
+.chat-line { margin: 0; background: var(--paper); border: 1.5px solid var(--border); border-radius: 5px; padding: 7px 10px; font-size: 0.75rem; line-height: 1.6; overflow-wrap: anywhere; }
+.chat-line strong { font-weight: 800; }
+.chat-correct { border-color: var(--foreground); background: var(--mint); color: var(--on-accent); font-weight: 700; }
+.chat-close { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.chat-system { background: transparent; border: 0; text-align: center; color: var(--muted-foreground); font-size: 0.6875rem; }
+.chat-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.chat-input { font-size: 1rem; }
+@media (max-width: 1100px) { .game-grid { grid-template-columns: minmax(0, 1fr) 280px; grid-template-areas: 'canvas chat' 'players players'; } }
+@media (max-width: 760px) { .game-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'canvas' 'chat' 'players'; } }
 .game-canvas { width: 100%; aspect-ratio: 4 / 3; display: block; touch-action: none; cursor: crosshair; }
 .top-group { display: inline-flex; align-items: center; gap: 8px; }
 .size-dot { display: block; border-radius: 50%; background: currentColor; }
@@ -177,4 +192,4 @@ h1 span { color: var(--primary); display: block; font-size: 2.6875rem; margin-to
 .player-score { margin-left: auto; font-weight: 800; font-size: 0.875rem; }
 .word-options { display: grid; gap: 11px; }
 .word-options .lobby-note { margin: 0; }
-@media (max-width: 900px) { .game-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .game-chat .chat-list { max-height: 300px; } }
