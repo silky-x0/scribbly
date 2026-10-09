@@ -107,7 +107,7 @@ export interface ClientToServerEvents {
     payload: { roomId: string; name: string },
     ack: (
       res:
-        | { ok: true; player: Player; settings: RoomSettings }
+        | { ok: true; player: Player; settings: RoomSettings; players: Player[] }
         | { ok: false; error: string },
     ) => void,
   ) => void;
@@ -131,6 +131,8 @@ export interface ClientToServerEvents {
   }) => void;
   draw_move: (payload: { x: number; y: number }) => void;
   draw_end: () => void;
+  undo_stroke: () => void;
+  clear_canvas: () => void;
   chat: (payload: { text: string }) => void;
   guess: (payload: { text: string }) => void;
 }
