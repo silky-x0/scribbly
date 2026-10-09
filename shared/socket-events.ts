@@ -1,6 +1,6 @@
-export type Tool = 'brush' | 'eraser';
+export type Tool = "brush" | "eraser";
 
-export const SYSTEM_SENDER_ID = 'system';
+export const SYSTEM_SENDER_ID = "system";
 
 export interface Point {
   x: number; // normalized 0..1
@@ -16,11 +16,7 @@ export interface Stroke {
 }
 
 export type GamePhase =
-  | 'LOBBY'
-  | 'WORD_SELECTION'
-  | 'DRAWING'
-  | 'ROUND_END'
-  | 'GAME_OVER';
+  "LOBBY" | "WORD_SELECTION" | "DRAWING" | "ROUND_END" | "GAME_OVER";
 
 export interface Player {
   id: string; // socket id
@@ -38,8 +34,11 @@ export interface RoomSettings {
   drawTime: number; // seconds, 15..240
   wordCount: number; // 1..5 word choices
   hints: number; // 0..5
-  wordMode: 'Normal' | 'Hidden' | 'Combination';
+  wordMode: "Normal" | "Hidden" | "Combination";
   isPrivate: boolean;
+  categories: string[]; // empty = all categories
+  customWords: string[];
+  customOnly: boolean; // ignore the built-in pool when custom words exist
 }
 
 // ---- Server -> Client events ----
@@ -49,6 +48,11 @@ export interface ServerToClientEvents {
   player_joined: (payload: { players: Player[] }) => void;
   player_left: (payload: { players: Player[] }) => void;
   lobby_update: (payload: { players: Player[] }) => void;
+  votekick_update: (payload: {
+    targetId: string;
+    votes: number;
+    needed: number;
+  }) => void;
   round_start: (payload: {
     drawerId: string;
     wordOptions: string[] | null; // null for non-drawers
@@ -62,7 +66,7 @@ export interface ServerToClientEvents {
     color: string;
     size: number;
     tool: Tool;
-    phase: 'start' | 'move' | 'end';
+    phase: "start" | "move" | "end";
   }) => void;
   draw_undo: (payload: { strokes: Stroke[] }) => void;
   canvas_clear: () => void;
@@ -80,7 +84,7 @@ export interface ServerToClientEvents {
   }) => void;
   round_end: (payload: {
     word: string;
-    scores: Pick<Player, 'id' | 'name' | 'score'>[];
+    scores: Pick<Player, "id" | "name" | "score">[];
     nextDrawerId: string | null;
   }) => void;
   game_over: (payload: {
@@ -109,7 +113,12 @@ export interface ClientToServerEvents {
     payload: { roomId: string; name: string },
     ack: (
       res:
-        | { ok: true; player: Player; settings: RoomSettings; players: Player[] }
+        | {
+            ok: true;
+            player: Player;
+            settings: RoomSettings;
+            players: Player[];
+          }
         | { ok: false; error: string },
     ) => void,
   ) => void;
@@ -121,6 +130,18 @@ export interface ClientToServerEvents {
     ack: (res: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
   play_again: (
+    ack: (res: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
+  kick_player: (
+    payload: { playerId: string },
+    ack: (res: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
+  ban_player: (
+    payload: { playerId: string },
+    ack: (res: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
+  votekick: (
+    payload: { playerId: string },
     ack: (res: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
   leave_room: (

@@ -15,12 +15,7 @@ export interface Stroke {
   points: Point[];
 }
 
-export type GamePhase =
-  | 'LOBBY'
-  | 'WORD_SELECTION'
-  | 'DRAWING'
-  | 'ROUND_END'
-  | 'GAME_OVER';
+export type GamePhase = 'LOBBY' | 'WORD_SELECTION' | 'DRAWING' | 'ROUND_END' | 'GAME_OVER';
 
 export interface Player {
   id: string; // socket id
@@ -40,6 +35,9 @@ export interface RoomSettings {
   hints: number; // 0..5
   wordMode: 'Normal' | 'Hidden' | 'Combination';
   isPrivate: boolean;
+  categories: string[]; // empty = all categories
+  customWords: string[];
+  customOnly: boolean; // ignore the built-in pool when custom words exist
 }
 
 // ---- Server -> Client events ----
@@ -49,6 +47,7 @@ export interface ServerToClientEvents {
   player_joined: (payload: { players: Player[] }) => void;
   player_left: (payload: { players: Player[] }) => void;
   lobby_update: (payload: { players: Player[] }) => void;
+  votekick_update: (payload: { targetId: string; votes: number; needed: number }) => void;
   round_start: (payload: {
     drawerId: string;
     wordOptions: string[] | null; // null for non-drawers
@@ -73,20 +72,13 @@ export interface ServerToClientEvents {
     playerName: string;
     points?: number;
   }) => void;
-  chat_message: (payload: {
-    playerId: string;
-    playerName: string;
-    text: string;
-  }) => void;
+  chat_message: (payload: { playerId: string; playerName: string; text: string }) => void;
   round_end: (payload: {
     word: string;
     scores: Pick<Player, 'id' | 'name' | 'score'>[];
     nextDrawerId: string | null;
   }) => void;
-  game_over: (payload: {
-    winner: Player | null;
-    leaderboard: Player[];
-  }) => void;
+  game_over: (payload: { winner: Player | null; leaderboard: Player[] }) => void;
   game_state: (payload: {
     phase: GamePhase;
     players: Player[];
@@ -113,27 +105,27 @@ export interface ClientToServerEvents {
         | { ok: false; error: string },
     ) => void,
   ) => void;
-  start_game: (
-    ack: (res: { ok: true } | { ok: false; error: string }) => void,
-  ) => void;
+  start_game: (ack: (res: { ok: true } | { ok: false; error: string }) => void) => void;
   toggle_ready: (
     payload: { isReady: boolean },
     ack: (res: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
-  play_again: (
+  play_again: (ack: (res: { ok: true } | { ok: false; error: string }) => void) => void;
+  kick_player: (
+    payload: { playerId: string },
     ack: (res: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
-  leave_room: (
+  ban_player: (
+    payload: { playerId: string },
     ack: (res: { ok: true } | { ok: false; error: string }) => void,
   ) => void;
+  votekick: (
+    payload: { playerId: string },
+    ack: (res: { ok: true } | { ok: false; error: string }) => void,
+  ) => void;
+  leave_room: (ack: (res: { ok: true } | { ok: false; error: string }) => void) => void;
   word_chosen: (payload: { word: string }) => void;
-  draw_start: (payload: {
-    x: number;
-    y: number;
-    color: string;
-    size: number;
-    tool: Tool;
-  }) => void;
+  draw_start: (payload: { x: number; y: number; color: string; size: number; tool: Tool }) => void;
   draw_move: (payload: { x: number; y: number }) => void;
   draw_end: () => void;
   undo_stroke: () => void;
