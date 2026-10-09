@@ -1,5 +1,7 @@
 export type Tool = 'brush' | 'eraser';
 
+export const SYSTEM_SENDER_ID = 'system';
+
 export interface Point {
   x: number; // normalized 0..1
   y: number; // normalized 0..1
