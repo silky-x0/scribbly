@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Check, Copy, LogOut, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameView } from '@/components/game-view';
+import { GameView, ModerationButtons, type Moderation } from '@/components/game-view';
 import { Toaster, type Toast } from '@/components/toaster';
 import { useSocket } from '@/context/SocketContext';
 import { ACK_TIMEOUT_MS } from '@/lib/socket';
@@ -26,6 +26,7 @@ type RoundStartPayload = Parameters<ServerToClientEvents['round_start']>[0];
 type RoundEndPayload = Parameters<ServerToClientEvents['round_end']>[0];
 type GameOverPayload = Parameters<ServerToClientEvents['game_over']>[0];
 type GameStatePayload = Parameters<ServerToClientEvents['game_state']>[0];
+type VotesPayload = Parameters<ServerToClientEvents['votekick_update']>[0];
 
 function friendlyJoinError(roomId: string, error: string): string {
   if (/not found/i.test(error)) {
@@ -67,6 +68,7 @@ export default function RoomPage() {
   const [roundEnd, setRoundEnd] = useState<RoundEndPayload | null>(null);
   const [gameOver, setGameOver] = useState<GameOverPayload | null>(null);
   const [hints, setHints] = useState<string[] | null>(null);
+  const [votes, setVotes] = useState<Record<string, { votes: number; needed: number }>>({});
   const [prevScores, setPrevScores] = useState<Record<string, number> | null>(null);
   const playersRef = useRef<Player[] | null>(null);
   useEffect(() => {
@@ -201,6 +203,13 @@ export default function RoomPage() {
     socket.on('round_end', onRoundEnd);
     socket.on('game_over', onGameOver);
     socket.on('hint_update', onHint);
+    const onVotes = (p: VotesPayload) => {
+      setVotes((prev) => ({
+        ...prev,
+        [p.targetId]: { votes: p.votes, needed: p.needed },
+      }));
+    };
+    socket.on('votekick_update', onVotes);
     return () => {
       socket.off('round_start', onRoundStart);
       socket.off('timer_tick', onTick);
@@ -208,6 +217,7 @@ export default function RoomPage() {
       socket.off('round_end', onRoundEnd);
       socket.off('game_over', onGameOver);
       socket.off('hint_update', onHint);
+      socket.off('votekick_update', onVotes);
     };
   }, [socket]);
 
@@ -226,6 +236,24 @@ export default function RoomPage() {
   function toggleReady() {
     const me = players?.find((p) => p.id === myId);
     socket.emit('toggle_ready', { isReady: !(me?.isReady ?? false) }, (res) => {
+      if (!res.ok) pushToast(res.error, 'error');
+    });
+  }
+
+  function kickPlayer(playerId: string) {
+    socket.emit('kick_player', { playerId }, (res) => {
+      if (!res.ok) pushToast(res.error, 'error');
+    });
+  }
+
+  function banPlayer(playerId: string) {
+    socket.emit('ban_player', { playerId }, (res) => {
+      if (!res.ok) pushToast(res.error, 'error');
+    });
+  }
+
+  function voteKick(playerId: string) {
+    socket.emit('votekick', { playerId }, (res) => {
       if (!res.ok) pushToast(res.error, 'error');
     });
   }
@@ -280,6 +308,14 @@ export default function RoomPage() {
     busy === null;
   const guessing =
     phase === 'DRAWING' && myId !== null && myId !== drawerId && !(me?.hasGuessed ?? false);
+  const moderation: Moderation = {
+    canModerate: me?.isHost === true,
+    canVote: me !== null && me?.isHost !== true,
+    votes,
+    onKick: kickPlayer,
+    onBan: banPlayer,
+    onVote: voteKick,
+  };
   const gamePhase: GamePhaseView | 'GAME_OVER' | null =
     phase === 'WORD_SELECTION' ||
     phase === 'DRAWING' ||
@@ -311,6 +347,7 @@ export default function RoomPage() {
             hints={hints}
             guessing={guessing}
             prevScores={prevScores}
+            moderation={moderation}
             endTitle={
               gameOver?.winner ? `${gameOver.winner.name} wins!` : 'Game over'
             }
@@ -418,6 +455,19 @@ export default function RoomPage() {
                 <div><dt>Word choices</dt><dd>{settings.wordCount}</dd></div>
                 <div><dt>Hints</dt><dd>{settings.hints}</dd></div>
                 <div><dt>Word mode</dt><dd>{settings.wordMode}</dd></div>
+                <div>
+                  <dt>Categories</dt>
+                  <dd>{settings.categories.length > 0 ? settings.categories.join(', ') : 'All'}</dd>
+                </div>
+                {settings.customWords.length > 0 && (
+                  <div>
+                    <dt>Custom words</dt>
+                    <dd>
+                      {settings.customWords.length}
+                      {settings.customOnly ? ' (only)' : ' (added)'}
+                    </dd>
+                  </div>
+                )}
               </dl>
             )}
 
@@ -441,6 +491,13 @@ export default function RoomPage() {
                       {p.isReady ? <Check size={13} /> : null}
                       {p.isReady ? 'Ready' : 'Not ready'}
                     </span>
+                    {p.id !== myId && (
+                      <ModerationButtons
+                        moderation={moderation}
+                        playerId={p.id}
+                        playerName={p.name}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>

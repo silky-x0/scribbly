@@ -169,6 +169,17 @@ h1 span { color: var(--primary); display: block; font-size: 2.6875rem; margin-to
 .toast-success { background: var(--mint); color: var(--on-accent); }
 @media (max-width: 700px) { .lobby-wrap { padding: 28px 22px 48px; } .lobby-card { padding: 22px; } .settings-summary { grid-template-columns: repeat(2, 1fr); } .settings-grid { grid-template-columns: 1fr; } }
 
+/* Public browser, settings extras, moderation */
+.public-rooms { max-width: 822px; margin: 38px auto 0; background: var(--paper); border: 2px solid var(--foreground); border-radius: 8px; padding: 24px; box-shadow: var(--ink-shadow); }
+.public-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.public-head h2 { font-family: var(--font-display); font-size: 1.25rem; font-weight: 800; margin: 0; }
+.check-list { display: grid; gap: 8px; margin-top: 4px; }
+.check-row { display: flex; align-items: center; gap: 9px; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+.check-row input { width: 17px; height: 17px; accent-color: var(--primary); }
+.text-area { height: auto; min-height: 64px; padding: 10px 12px; resize: vertical; line-height: 1.6; }
+.row-actions { display: inline-flex; gap: 4px; }
+.vote-count { font-size: 0.6875rem; font-weight: 800; }
+
 /* Game view: paper canvas left, roster right, guess feed joins in Phase 5 */
 .game-wrap { max-width: 1200px; margin: 0 auto; padding: 32px 24px 56px; display: grid; gap: 20px; }
 .game-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; grid-template-areas: 'players canvas chat'; gap: 24px; align-items: start; }

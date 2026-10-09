@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Clock3, Eraser, LogOut, Pencil, Trash2, Undo2 } from 'lucide-react';
+import { Ban, Check, Clock3, Eraser, LogOut, Pencil, Trash2, Undo2, UserX, Vote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ChatPanel } from '@/components/chat-panel';
 import { GameCanvas } from '@/components/game-canvas';
@@ -22,6 +22,96 @@ import type {
 export type GamePhaseView = 'WORD_SELECTION' | 'DRAWING' | 'ROUND_END' | 'GAME_OVER';
 type RoundEnd = Parameters<ServerToClientEvents['round_end']>[0];
 
+export interface Moderation {
+  canModerate: boolean;
+  canVote: boolean;
+  votes: Record<string, { votes: number; needed: number }>;
+  onKick: (playerId: string) => void;
+  onBan: (playerId: string) => void;
+  onVote: (playerId: string) => void;
+}
+
+export function ModerationButtons({
+  moderation,
+  playerId,
+  playerName,
+}: {
+  moderation: Moderation;
+  playerId: string;
+  playerName: string;
+}) {
+  const progress = moderation.votes[playerId];
+  const [confirming, setConfirming] = useState<'kick' | 'ban' | null>(null);
+  function confirmable(action: 'kick' | 'ban', run: () => void) {
+    if (confirming !== action) {
+      setConfirming(action);
+      setTimeout(() => {
+        setConfirming((c) => (c === action ? null : c));
+      }, 3000);
+      return;
+    }
+    setConfirming(null);
+    run();
+  }
+  return (
+    <>
+      {moderation.canModerate && (
+        <span className="row-actions">
+          <Button
+            type="button"
+            variant="tool"
+            className={confirming === 'kick' ? 'tool-armed' : undefined}
+            title={
+              confirming === 'kick' ? `Confirm kick ${playerName}?` : `Kick ${playerName}`
+            }
+            aria-label={
+              confirming === 'kick' ? `Confirm kick ${playerName}` : `Kick ${playerName}`
+            }
+            onClick={() => confirmable('kick', () => moderation.onKick(playerId))}
+          >
+            <UserX size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="tool"
+            className={confirming === 'ban' ? 'tool-armed' : undefined}
+            title={
+              confirming === 'ban' ? `Confirm ban ${playerName}?` : `Ban ${playerName}`
+            }
+            aria-label={
+              confirming === 'ban' ? `Confirm ban ${playerName}` : `Ban ${playerName}`
+            }
+            onClick={() => confirmable('ban', () => moderation.onBan(playerId))}
+          >
+            <Ban size={14} />
+          </Button>
+        </span>
+      )}
+      {moderation.canVote && (
+        <Button
+          type="button"
+          variant="tool"
+          title={
+            progress !== undefined
+              ? `Votekick ${playerName} (${progress.votes}/${progress.needed})`
+              : `Votekick ${playerName}`
+          }
+          aria-label={`Votekick ${playerName}`}
+          onClick={() => moderation.onVote(playerId)}
+        >
+          {progress !== undefined ? (
+            <span className="vote-count">
+              {progress.votes}/{progress.needed}
+            </span>
+          ) : (
+            <Vote size={14} />
+          )}
+        </Button>
+      )}
+    </>
+  );
+}
+
 function drawerName(players: Player[], drawerId: string): string {
   return players.find((p) => p.id === drawerId)?.name ?? 'Someone';
 }
@@ -40,6 +130,7 @@ export function GameView({
   hints,
   guessing,
   prevScores,
+  moderation,
   onPickWord,
   onLeave,
   leaving,
@@ -57,6 +148,7 @@ export function GameView({
   hints: string[] | null;
   guessing: boolean;
   prevScores: Record<string, number> | null;
+  moderation: Moderation;
   onPickWord: (word: string) => void;
   onLeave: () => void;
   leaving: boolean;
@@ -130,6 +222,13 @@ export function GameView({
                   <span className="ready-pill is-ready">
                     <Check size={13} /> Guessed
                   </span>
+                )}
+                {p.id !== myId && (
+                  <ModerationButtons
+                    moderation={moderation}
+                    playerId={p.id}
+                    playerName={p.name}
+                  />
                 )}
                 <span className="player-score">{p.score}</span>
               </li>

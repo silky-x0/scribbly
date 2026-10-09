@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowRight, Cat, Ghost, Heart, MonitorSmartphone, Moon, Pencil, Rabbit, Shuffle, Smile, Sun, Trophy, Users, X } from 'lucide-react';
+import { ArrowRight, Cat, Dices, Ghost, Heart, MonitorSmartphone, Moon, Pencil, Rabbit, Shuffle, Smile, Sun, Trophy, Users, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { DrawingDemo } from '@/components/drawing-demo';
-import { DEFAULT_FORM, SettingsForm, type RoomForm } from '@/components/settings-form';
+import { DEFAULT_FORM, SettingsForm } from '@/components/settings-form';
 import { useSocket } from '@/context/SocketContext';
 import { ACK_TIMEOUT_MS } from '@/lib/socket';
+import { SERVER_URL } from '@/lib/server-url';
 import { saveIdentity, saveLastRoom } from '@/lib/session';
 import type { RoomSettings } from '@/types/socket-events';
 
@@ -41,6 +42,41 @@ function applyTheme(next: Theme) {
     else window.localStorage.setItem(THEME_KEY, next);
   } catch { /* private mode: keep it in memory only */ }
 }
+interface PublicRoom {
+  roomId: string;
+  playerCount: number;
+  maxPlayers: number;
+  inGame: boolean;
+}
+
+const BROWSER_POLL_MS = 5000;
+
+function parseRooms(body: unknown): PublicRoom[] | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const list = (body as Record<string, unknown>).rooms;
+  if (!Array.isArray(list)) return null;
+  const out: PublicRoom[] = [];
+  for (const entry of list) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const r = entry as Record<string, unknown>;
+    if (
+      typeof r.roomId !== 'string' ||
+      typeof r.playerCount !== 'number' ||
+      typeof r.maxPlayers !== 'number' ||
+      typeof r.inGame !== 'boolean'
+    ) {
+      continue;
+    }
+    out.push({
+      roomId: r.roomId,
+      playerCount: r.playerCount,
+      maxPlayers: r.maxPlayers,
+      inGame: r.inGame,
+    });
+  }
+  return out;
+}
+
 export function LandingPage() {
   const [avatar, setAvatar] = useState(0);
   const [name, setName] = useState('');
@@ -98,7 +134,61 @@ export function LandingPage() {
     setError('');
     setShowSettings(true);
   }
-  function createPrivate(form: RoomForm) { createRoom({ ...form, isPrivate: true }); }
+  function createPrivate(settings: RoomSettings) { createRoom({ ...settings, isPrivate: true }); }
+  const [rooms, setRooms] = useState<PublicRoom[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    async function load() {
+      try {
+        const res = await fetch(`${SERVER_URL}/api/rooms/public`);
+        const parsed = parseRooms(await res.json());
+        if (live && parsed !== null) setRooms(parsed);
+      } catch {
+        // Server down: browser stays loading; creation errors surface separately.
+      }
+    }
+    void load();
+    const timer = setInterval(() => {
+      void load();
+    }, BROWSER_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, []);
+  function joinAndGo(roomId: string) {
+    const trimmed = name.trim();
+    if (trimmed === '') { setError('Give your doodler a name first.'); return; }
+    setError('');
+    setBusy(true);
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      setBusy(false);
+      setError('Could not reach the game server. Is it running?');
+    }, ACK_TIMEOUT_MS);
+    socket.emit('join_room', { roomId, name: trimmed }, (res) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      setBusy(false);
+      if (!res.ok) { setError(res.error); return; }
+      saveIdentity({ name: trimmed, avatar, language });
+      saveLastRoom({ roomId, myId: res.player.id, settings: res.settings });
+      router.push(`/room/${roomId}`);
+    });
+  }
+  function joinRandom() {
+    const open = (rooms ?? []).filter((r) => r.playerCount < r.maxPlayers);
+    if (open.length === 0) {
+      if (name.trim() === '') setError('Give your doodler a name first.');
+      else setError('No open rooms right now — create one above!');
+      return;
+    }
+    const pick = open[Math.floor(Math.random() * open.length)];
+    if (pick !== undefined) joinAndGo(pick.roomId);
+  }
   useEffect(() => {
     if (!showSettings) return;
     openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -133,6 +223,39 @@ export function LandingPage() {
             <DrawingDemo/>
           </div>
           <div className="social-proof"><div className="avatar-stack"><span><Cat size={17}/></span><span><Ghost size={17}/></span><span><Smile size={17}/></span></div><span>Better with friends. Even better with bad drawings.</span><Heart size={13} className="text-primary"/></div>
+          <div className="public-rooms">
+            <div className="public-head">
+              <h2>Open rooms</h2>
+              <Button type="button" variant="paper" disabled={busy} onClick={() => joinRandom()}>
+                <Dices size={17} /> Join random
+              </Button>
+            </div>
+            {rooms === null ? (
+              <p className="lobby-note">Looking for open rooms…</p>
+            ) : rooms.length === 0 ? (
+              <p className="lobby-note">No public rooms right now — create one above!</p>
+            ) : (
+              <ul className="player-list">
+                {rooms.map((r) => (
+                  <li key={r.roomId} className="player-row">
+                    <span className="player-name">{r.roomId}</span>
+                    <span className="lobby-note">
+                      {r.playerCount}/{r.maxPlayers} · {r.inGame ? 'In game' : 'In lobby'}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="paper"
+                      className="ml-auto"
+                      disabled={busy || r.playerCount >= r.maxPlayers}
+                      onClick={() => joinAndGo(r.roomId)}
+                    >
+                      Join
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </section>
       <section className="steps-section" id="how-it-works"><div className="section-heading"><h2>Small doodles. Big laughs.</h2><span>THREE STEPS TO A VERY GOOD TIME</span></div><div className="steps"><article className="step"><span className="step-icon"><Pencil size={23}/></span><div><h3>01. Make your masterpiece</h3><p>Get a secret word. Draw it your way.<br/>Stick figures are very welcome.</p></div></article><article className="step"><span className="step-icon"><Smile size={23}/></span><div><h3>02. Guess the unexpected</h3><p>Is it a cat? A toaster? Your uncle?<br/>Type your guess before time runs out.</p></div></article><article className="step"><span className="step-icon"><Trophy size={23}/></span><div><h3>03. Collect the bragging rights</h3><p>Quick guesses. More points.<br/>Endless “how was that a banana?!”</p></div></article></div></section>
