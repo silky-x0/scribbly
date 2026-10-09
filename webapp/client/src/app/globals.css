@@ -166,3 +166,15 @@ h1 span { color: var(--primary); display: block; font-size: 2.6875rem; margin-to
 .toast-error { background: var(--primary-ink); color: var(--on-primary); }
 .toast-success { background: var(--mint); color: var(--on-accent); }
 @media (max-width: 700px) { .lobby-wrap { padding: 28px 22px 48px; } .lobby-card { padding: 22px; } .settings-summary { grid-template-columns: repeat(2, 1fr); } .settings-grid { grid-template-columns: 1fr; } }
+
+/* Game view: paper canvas left, roster right, guess feed joins in Phase 5 */
+.game-wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 56px; display: grid; gap: 20px; }
+.game-grid { display: grid; grid-template-columns: 1fr 250px; gap: 24px; align-items: start; }
+.game-canvas { width: 100%; aspect-ratio: 4 / 3; display: block; touch-action: none; cursor: crosshair; }
+.top-group { display: inline-flex; align-items: center; gap: 8px; }
+.size-dot { display: block; border-radius: 50%; background: currentColor; }
+.tool-armed { box-shadow: 0 0 0 2px var(--primary); }
+.player-score { margin-left: auto; font-weight: 800; font-size: 0.875rem; }
+.word-options { display: grid; gap: 11px; }
+.word-options .lobby-note { margin: 0; }
+@media (max-width: 900px) { .game-grid { grid-template-columns: 1fr; } }

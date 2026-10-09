@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Check, Copy, LogOut, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { GameView } from '@/components/game-view';
 import { Toaster, type Toast } from '@/components/toaster';
 import { useSocket } from '@/context/SocketContext';
 import { ACK_TIMEOUT_MS } from '@/lib/socket';
@@ -13,7 +14,18 @@ import {
   saveIdentity,
   saveLastRoom,
 } from '@/lib/session';
-import type { Player, RoomSettings } from '@/types/socket-events';
+import type {
+  GamePhase,
+  Player,
+  RoomSettings,
+  ServerToClientEvents,
+} from '@/types/socket-events';
+import type { GamePhaseView } from '@/components/game-view';
+
+type RoundStartPayload = Parameters<ServerToClientEvents['round_start']>[0];
+type RoundEndPayload = Parameters<ServerToClientEvents['round_end']>[0];
+type GameOverPayload = Parameters<ServerToClientEvents['game_over']>[0];
+type GameStatePayload = Parameters<ServerToClientEvents['game_state']>[0];
 
 function friendlyJoinError(roomId: string, error: string): string {
   if (/not found/i.test(error)) {
@@ -47,6 +59,13 @@ export default function RoomPage() {
   const [players, setPlayers] = useState<Player[] | null>(null);
   const [settings, setSettings] = useState<RoomSettings | null>(null);
   const [myId, setMyId] = useState<string | null>(null);
+  const [phase, setPhase] = useState<GamePhase | null>(null);
+  const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [wordOptions, setWordOptions] = useState<string[]>([]);
+  const [pickedWord, setPickedWord] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [roundEnd, setRoundEnd] = useState<RoundEndPayload | null>(null);
+  const [gameOver, setGameOver] = useState<GameOverPayload | null>(null);
   const [joined, setJoined] = useState(false);
   const needsName = useSyncExternalStore(
     subscribeIdentity,
@@ -96,6 +115,7 @@ export default function RoomPage() {
         setJoined(true);
         setMyId(res.player.id);
         setSettings(res.settings);
+        setPlayers(res.players);
         saveLastRoom({ roomId, myId: res.player.id, settings: res.settings });
         setJoinError('');
       });
@@ -131,6 +151,52 @@ export default function RoomPage() {
     };
   }, [socket]);
 
+  useEffect(() => {
+    const onRoundStart = (p: RoundStartPayload) => {
+      setDrawerId(p.drawerId);
+      setWordOptions(p.wordOptions ?? []);
+      setPickedWord(null);
+      setTimeLeft(p.drawTime);
+      setRoundEnd(null);
+      setGameOver(null);
+      setPhase('WORD_SELECTION');
+    };
+    const onTick = (p: { timeLeft: number }) => setTimeLeft(p.timeLeft);
+    const onState = (p: GameStatePayload) => {
+      setPhase(p.phase);
+      setTimeLeft(p.timeLeft);
+    };
+    const onRoundEnd = (p: RoundEndPayload) => {
+      setPhase('ROUND_END');
+      setRoundEnd(p);
+      setPickedWord(null);
+      setPlayers((prev) =>
+        prev === null
+          ? prev
+          : prev.map((pl) => {
+              const s = p.scores.find((x) => x.id === pl.id);
+              return s === undefined ? pl : { ...pl, score: s.score };
+            }),
+      );
+    };
+    const onGameOver = (p: GameOverPayload) => {
+      setPhase('GAME_OVER');
+      setGameOver(p);
+    };
+    socket.on('round_start', onRoundStart);
+    socket.on('timer_tick', onTick);
+    socket.on('game_state', onState);
+    socket.on('round_end', onRoundEnd);
+    socket.on('game_over', onGameOver);
+    return () => {
+      socket.off('round_start', onRoundStart);
+      socket.off('timer_tick', onTick);
+      socket.off('game_state', onState);
+      socket.off('round_end', onRoundEnd);
+      socket.off('game_over', onGameOver);
+    };
+  }, [socket]);
+
   function submitName(event: React.FormEvent) {
     event.preventDefault();
     const name = joinName.trim();
@@ -156,10 +222,13 @@ export default function RoomPage() {
       setBusy(null);
       if (!res.ok) {
         pushToast(res.error, 'error');
-        return;
       }
-      pushToast('Lobby complete! Rounds and drawing arrive in Phase 3.', 'success');
     });
+  }
+
+  function pickWord(word: string) {
+    socket.emit('word_chosen', { word });
+    setPickedWord(word);
   }
 
   function leave() {
@@ -185,6 +254,13 @@ export default function RoomPage() {
   const me = players?.find((p) => p.id === myId) ?? null;
   const canStart =
     me?.isHost === true && (players?.length ?? 0) >= 2 && busy === null;
+  const gamePhase: GamePhaseView | 'GAME_OVER' | null =
+    phase === 'WORD_SELECTION' ||
+    phase === 'DRAWING' ||
+    phase === 'ROUND_END' ||
+    phase === 'GAME_OVER'
+      ? phase
+      : null;
 
   return (
     <div className="site">
@@ -194,6 +270,63 @@ export default function RoomPage() {
         </Link>
         <span className="header-tag">{connected ? 'Online' : 'Offline…'}</span>
       </header>
+      {gamePhase !== null && players !== null && drawerId !== null && myId !== null ? (
+        <main>
+          <GameView
+            socket={socket}
+            myId={myId}
+            players={players}
+            drawerId={drawerId}
+            phase={gamePhase}
+            wordOptions={wordOptions}
+            pickedWord={pickedWord}
+            timeLeft={timeLeft}
+            roundEnd={roundEnd}
+            endTitle={
+              gameOver?.winner ? `${gameOver.winner.name} wins!` : 'Game over'
+            }
+            onPickWord={pickWord}
+            onLeave={leave}
+            leaving={busy === 'leave'}
+          />
+          {phase === 'GAME_OVER' && gameOver !== null && (
+            <div className="dialog-backdrop">
+              <section className="lobby-dialog" role="dialog" aria-label="Game over">
+                <h2 className="card-title">
+                  {gameOver.winner !== null ? `${gameOver.winner.name} wins!` : 'Game over'}
+                </h2>
+                <ul className="player-list">
+                  {gameOver.leaderboard.map((p) => (
+                    <li key={p.id} className="player-row">
+                      <span className="player-avatar" aria-hidden="true">
+                        {p.name.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="player-name">
+                        {p.name}
+                        {p.id === myId && ' (you)'}
+                      </span>
+                      <span className="player-score">{p.score}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="entry-actions">
+                  {me?.isHost === true && (
+                    <Button type="button" variant="play" disabled={busy !== null} onClick={startGame}>
+                      {busy === 'start' ? 'Starting…' : 'Play again'}
+                    </Button>
+                  )}
+                  <Button type="button" variant="paper" disabled={busy === 'leave'} onClick={leave}>
+                    <LogOut size={17} /> Leave
+                  </Button>
+                </div>
+                {me?.isHost !== true && (
+                  <p className="lobby-note">Waiting for the host to start again…</p>
+                )}
+              </section>
+            </div>
+          )}
+        </main>
+      ) : (
       <main className="lobby-wrap">
         {roomId === '' ? (
           <section className="lobby-card">
@@ -274,7 +407,7 @@ export default function RoomPage() {
                       {p.id === myId && ' (you)'}
                     </span>
                     {p.isHost && <span className="host-badge">HOST</span>}
-                    <span className={`ready-pill${p.hasGuessed || p.isReady ? ' is-ready' : ''}`}>
+                    <span className={`ready-pill${p.isReady ? ' is-ready' : ''}`}>
                       {p.isReady ? <Check size={13} /> : null}
                       {p.isReady ? 'Ready' : 'Not ready'}
                     </span>
@@ -310,6 +443,7 @@ export default function RoomPage() {
           </section>
         )}
       </main>
+      )}
       <Toaster toasts={toasts} />
     </div>
   );
